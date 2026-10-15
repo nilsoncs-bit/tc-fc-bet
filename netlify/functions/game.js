@@ -98,9 +98,7 @@ function authPlayer(state, user, pin, { create = false } = {}) {
   }
   const ok = timingSafeEqual(Buffer.from(rec.hash, "hex"), scryptSync(pin, rec.salt, 32));
   return ok ? {} : { error: "PIN incorreto" };
-}
-
-function standingsRows(state) {
+} function standingsRows(state) {
   const rows = Object.fromEntries(
     state.schedule.players.map((p) => {
       const s = SEED[p.id] ?? { w: 0, l: 0, pf: 0, pa: 0 };
@@ -109,4 +107,196 @@ function standingsRows(state) {
   );
   for (const weekRes of Object.values(state.results)) {
     for (const r of Object.values(weekRes)) {
-      const A = row
+      const A = rows[r.aId];
+      const B = rows[r.bId];
+      if (!A || !B) continue;
+      A.pf += r.a;
+      A.pa += r.b;
+      B.pf += r.b;
+      B.pa += r.a;
+      if (r.winner === "A") { A.w++; B.l++; } else { B.w++; A.l++; }
+    }
+  }
+  return Object.values(rows);
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// Estimativa de % de playoffs: simula os jogos restantes com adversários aleatórios
+function playoffChances(rows, sims = 2000) {
+  const counts = Object.fromEntries(rows.map((r) => [r.id, 0]));
+  for (let s = 0; s < sims; s++) {
+    const sim = rows.map((r) => {
+      const g = r.w + r.l;
+      return { id: r.id, w: r.w, l: r.l, pf: r.pf, mean: g ? r.pf / g : 100, rem: Math.max(0, TOTAL_SEASON_WEEKS - g) };
+    });
+    const maxRem = Math.max(0, ...sim.map((x) => x.rem));
+    for (let wk = 0; wk < maxRem; wk++) {
+      const pool = shuffle(sim.filter((x) => x.rem > wk));
+      for (let i = 0; i + 1 < pool.length; i += 2) {
+        const A = pool[i];
+        const B = pool[i + 1];
+        const res = simulateMatch(A.mean, B.mean, { sigma: DEFAULT_SIGMA });
+        A.pf += res.scoreA;
+        B.pf += res.scoreB;
+        if (res.winner === "A") { A.w++; B.l++; } else { B.w++; A.l++; }
+      }
+    }
+    sim
+      .sort((x, y) => y.w - x.w || y.pf - x.pf)
+      .slice(0, PLAYOFF_SPOTS)
+      .forEach((x) => counts[x.id]++);
+  }
+  return Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, Math.round((v / sims) * 100)]));
+}
+
+function standingsView(state) {
+  const rows = standingsRows(state).sort((x, y) => y.w - x.w || y.pf - x.pf);
+  const chances = playoffChances(rows);
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    team: r.team,
+    w: r.w,
+    l: r.l,
+    pct: r.w + r.l ? (r.w / (r.w + r.l)).toFixed(3).replace(/^0/, "") : ".000",
+    pf: +r.pf.toFixed(1),
+    pa: +r.pa.toFixed(1),
+    playoff: chances[r.id],
+  }));
+}
+
+function view(state) {
+  const cfg = state.schedule;
+  return {
+    week: state.week,
+    scheduleWeek: cfg.week,
+    pendingWeek: state.pending?.week ?? null,
+    players: cfg.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      team: p.team,
+      balance: state.wallets[p.id].balance,
+      history: state.wallets[p.id].history,
+    })),
+    fixtures: cfg.fixtures.map((f) => {
+      const A = playerOf(state, f.a);
+      const B = playerOf(state, f.b);
+      const o = oddsFor(state, f);
+      return {
+        id: f.id,
+        a: A.team,
+        b: B.team,
+        oddA: o.oddA,
+        oddB: o.oddB,
+        result: state.results[state.week][f.id] ?? null,
+      };
+    }),
+    standings: standingsView(state),
+  };
+}
+export default async (req) => {
+  const store = getStore("tcfc");
+  const state = await loadState(store);
+  const save = () => store.setJSON("state", state);
+
+  if (req.method === "GET") {
+    await save();
+    return json(view(state));
+  }
+  if (req.method !== "POST") return json({ error: "Método não suportado" }, 405);
+
+  const body = await req.json();
+  const isAdmin = !!process.env.ADMIN_PASSWORD && body.password === process.env.ADMIN_PASSWORD;
+
+  if (body.action === "login") {
+    const r = authPlayer(state, body.user, body.pin, { create: true });
+    if (r.error) return json({ error: r.error }, 401);
+    await save();
+    return json({ ...view(state), created: !!r.created });
+  }
+
+  if (body.action === "schedule") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    const week = body.target === "current" ? state.week : nextWeekId(state.week);
+    let parsed;
+    try {
+      parsed = parseSchedule(body.text ?? "", week, state.registry);
+    } catch (err) {
+      return json({ error: err.message }, 400);
+    }
+    for (const p of parsed.players) state.registry[p.id] = { id: p.id, name: p.name, team: p.team };
+    ensureWallets(state, parsed.players, state.week);
+    if (body.target === "current") state.schedule = parsed;
+    else state.pending = parsed;
+    await save();
+    return json(view(state));
+  }
+
+  if (body.action === "results") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    const scores = body.scores ?? {};
+    for (const f of state.schedule.fixtures) {
+      const s = scores[f.id];
+      if (!s || typeof s.a !== "number" || typeof s.b !== "number") continue;
+      // Empate fica com o lado A
+      state.results[state.week][f.id] = {
+        a: s.a,
+        b: s.b,
+        winner: s.a >= s.b ? "A" : "B",
+        aId: f.a,
+        bId: f.b,
+      };
+    }
+    for (const id of Object.keys(state.wallets)) {
+      let w = state.wallets[id];
+      for (let i = 0; i < w.history.length; i++) {
+        const h = w.history[i];
+        if (h.type !== "bet" || h.status !== "open" || h.week !== state.week) continue;
+        const r = state.results[state.week][h.fixtureId];
+        if (r) w = settleBet(w, i, h.side === r.winner);
+      }
+      state.wallets[id] = w;
+    }
+    await save();
+    return json(view(state));
+  }
+
+  // Daqui em diante, toda ação de jogador exige nome + PIN válidos
+  const auth = authPlayer(state, body.user, body.pin);
+  if (auth.error) return json({ error: auth.error }, 401);
+
+  if (body.action === "bet") {
+    const f = state.schedule.fixtures.find((x) => x.id === body.fixtureId);
+    if (!f) return json({ error: "Confronto não encontrado" }, 400);
+    if (state.results[state.week][f.id]) return json({ error: "Confronto já encerrado" }, 400);
+    if (body.side !== "A" && body.side !== "B") return json({ error: "Lado inválido" }, 400);
+    const w = state.wallets[body.user];
+    const repeated = w.history.some(
+      (h) => h.type === "bet" && h.status === "open" && h.week === state.week && h.fixtureId === f.id
+    );
+    if (repeated) return json({ error: "Você já apostou neste confronto" }, 400);
+
+    const o = oddsFor(state, f);
+    const odd = body.side === "A" ? o.oddA : o.oddB;
+    let nw;
+    try {
+      nw = placeBet(w, body.stake, odd);
+    } catch (err) {
+      return json({ error: err.message }, 400);
+    }
+    const last = nw.history.length - 1;
+    nw.history[last] = { ...nw.history[last], fixtureId: f.id, side: body.side, week: state.week };
+    state.wallets[body.user] = nw;
+    await save();
+    return json(view(state));
+  }
+
+  return json({ error: "Ação inválida" }, 400);
+};
