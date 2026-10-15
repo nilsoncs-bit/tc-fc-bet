@@ -1,12 +1,10 @@
 // fantasy-coins: motor de odds, simulação e carteira (Game Coins virtuais, sem valor real)
-// Requer Node.js 18+ (ES modules). Pode ser importado pelo backend ou pelo front.
 
 export const START_COINS = 1000;
 export const WEEKLY_STIPEND = 100;
-export const DEFAULT_SIGMA = 38;   // desvio-padrão do placar semanal (calibrado para ~88% no exemplo)
+export const DEFAULT_SIGMA = 38;
 export const DEFAULT_MARGIN = 0.08;
 
-// ---------- Probabilidade ----------
 export function normalCdf(x) {
   const t = 1 / (1 + 0.2316419 * Math.abs(x));
   const d = 0.3989423 * Math.exp(-x * x / 2);
@@ -14,16 +12,10 @@ export function normalCdf(x) {
   return x > 0 ? 1 - p : p;
 }
 
-export function teamProjection(starters) {
-  return starters.reduce((sum, p) => sum + p.projection, 0);
-}
-
-// Diferença de dois placares independentes ~ N(projA - projB, 2·sigma²)
 export function winProbability(projA, projB, sigma = DEFAULT_SIGMA) {
   return normalCdf((projA - projB) / (sigma * Math.SQRT2));
 }
 
-// ---------- Odds ----------
 export function oddFromProbability(p, margin = DEFAULT_MARGIN) {
   const q = Math.min(0.99, Math.max(0.01, p));
   return Math.max(1.05, +(1 / (q * (1 + margin))).toFixed(2));
@@ -39,7 +31,6 @@ export function matchOdds(projA, projB, { sigma = DEFAULT_SIGMA, margin = DEFAUL
   };
 }
 
-// ---------- Simulação (reprodutível com seed) ----------
 export function mulberry32(seed) {
   let a = seed >>> 0;
   return () => {
@@ -64,3 +55,40 @@ export function simulateMatch(projA, projB, { sigma = DEFAULT_SIGMA, rng = Math.
     scoreB: +scoreB.toFixed(2),
     winner: scoreA >= scoreB ? "A" : "B",
   };
+}
+
+export function createWallet(userId) {
+  return { userId, balance: START_COINS, lastStipendWeek: null, history: [] };
+}
+
+export function grantWeeklyStipend(wallet, weekId) {
+  if (wallet.lastStipendWeek === weekId) return wallet;
+  return {
+    ...wallet,
+    balance: wallet.balance + WEEKLY_STIPEND,
+    lastStipendWeek: weekId,
+    history: [...wallet.history, { type: "stipend", amount: WEEKLY_STIPEND, weekId }],
+  };
+}
+
+export function placeBet(wallet, stake, odd) {
+  if (!Number.isInteger(stake) || stake <= 0) throw new Error("Aposta deve ser inteira e positiva");
+  if (stake > wallet.balance) throw new Error("Saldo insuficiente");
+  return {
+    ...wallet,
+    balance: wallet.balance - stake,
+    history: [...wallet.history, { type: "bet", stake, odd, status: "open" }],
+  };
+}
+
+export function settleBet(wallet, index, won) {
+  const bet = wallet.history[index];
+  if (!bet || bet.type !== "bet" || bet.status !== "open") {
+    throw new Error("Aposta inválida ou já liquidada");
+  }
+  const payout = won ? Math.floor(bet.stake * bet.odd) : 0;
+  const history = wallet.history.map((h, i) =>
+    i === index ? { ...h, status: won ? "won" : "lost", payout } : h
+  );
+  return { ...wallet, balance: wallet.balance + payout, history };
+}
