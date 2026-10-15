@@ -63,7 +63,44 @@ function parseSchedule(text, week, registry) {
     .map((b) => b.split("\n").map((l) => l.trim()).filter(Boolean))
     .filter((b) => b.length);
   if (!blocks.length) throw new Error("Cole os confrontos antes de salvar");
-  const players = [];function standingsRows(state) {
+  const players = [];
+  const fixtures = [];
+  blocks.forEach((block, i) => {
+    if (block.length !== 2) throw new Error(`Confronto ${i + 1}: cada confronto precisa de 2 linhas`);
+    const ids = block.map((line) => {
+      const parts = line.split("|").map((s) => s.trim());
+      if (parts.length !== 3 || !parts[0] || !parts[1]) throw new Error(`Linha inválida: "${line}"`);
+      const projection = Number(parts[2].replace(",", "."));
+      if (!Number.isFinite(projection)) throw new Error(`Projeção inválida: "${line}"`);
+      const known = Object.values(registry).find((r) => r.name.toLowerCase() === parts[0].toLowerCase());
+      const id = known?.id ?? slug(parts[0]);
+      if (!players.some((p) => p.id === id)) players.push({ id, name: parts[0], team: parts[1], projection });
+      return id;
+    });
+    fixtures.push({ id: `f${i + 1}`, a: ids[0], b: ids[1] });
+  });
+  return { week, players, fixtures };
+}
+
+const playerOf = (state, id) => state.schedule.players.find((p) => p.id === id) ?? state.registry[id];
+const oddsFor = (state, f) => matchOdds(playerOf(state, f.a).projection, playerOf(state, f.b).projection);
+
+// Login por nome + PIN. Com create=true, cria o PIN no primeiro acesso.
+function authPlayer(state, user, pin, { create = false } = {}) {
+  if (!state.registry[user]) return { error: "Jogador inválido" };
+  if (typeof pin !== "string" || !/^\d{4,6}$/.test(pin)) return { error: "O PIN deve ter de 4 a 6 números" };
+  const rec = state.auth[user];
+  if (!rec) {
+    if (!create) return { error: "Faça o primeiro acesso para criar seu PIN" };
+    const salt = randomBytes(16).toString("hex");
+    state.auth[user] = { salt, hash: scryptSync(pin, salt, 32).toString("hex") };
+    return { created: true };
+  }
+  const ok = timingSafeEqual(Buffer.from(rec.hash, "hex"), scryptSync(pin, rec.salt, 32));
+  return ok ? {} : { error: "PIN incorreto" };
+}
+
+function standingsRows(state) {
   const rows = Object.fromEntries(
     state.schedule.players.map((p) => {
       const s = SEED[p.id] ?? { w: 0, l: 0, pf: 0, pa: 0 };
@@ -72,120 +109,4 @@ function parseSchedule(text, week, registry) {
   );
   for (const weekRes of Object.values(state.results)) {
     for (const r of Object.values(weekRes)) {
-      const A = rows[r.aId];
-      const B = rows[r.bId];
-      if (!A || !B) continue;
-      A.pf += r.a;
-      A.pa += r.b;
-      B.pf += r.b;
-      B.pa += r.a;
-      if (r.winner === "A") { A.w++; B.l++; } else { B.w++; A.l++; }
-    }
-  }
-  return Object.values(rows);
-}
-
-function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
-// Estimativa de % de playoffs: simula os jogos restantes com adversários aleatórios
-function playoffChances(rows, sims = 2000) {
-  const counts = Object.fromEntries(rows.map((r) => [r.id, 0]));
-  for (let s = 0; s < sims; s++) {
-    const sim = rows.map((r) => {
-      const g = r.w + r.l;
-      return { id: r.id, w: r.w, l: r.l, pf: r.pf, mean: g ? r.pf / g : 100, rem: Math.max(0, TOTAL_SEASON_WEEKS - g) };
-    });
-    const maxRem = Math.max(0, ...sim.map((x) => x.rem));
-    for (let wk = 0; wk < maxRem; wk++) {
-      const pool = shuffle(sim.filter((x) => x.rem > wk));
-      for (let i = 0; i + 1 < pool.length; i += 2) {
-        const A = pool[i];
-        const B = pool[i + 1];
-        const res = simulateMatch(A.mean, B.mean, { sigma: DEFAULT_SIGMA });
-        A.pf += res.scoreA;
-        B.pf += res.scoreB;
-        if (res.winner === "A") { A.w++; B.l++; } else { B.w++; A.l++; }
-      }
-    }
-    sim
-      .sort((x, y) => y.w - x.w || y.pf - x.pf)
-      .slice(0, PLAYOFF_SPOTS)
-      .forEach((x) => counts[x.id]++);
-  }
-  return Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, Math.round((v / sims) * 100)]));
-}
-
-function standingsView(state) {
-  const rows = standingsRows(state).sort((x, y) => y.w - x.w ||export default async (req) => {
-  const store = getStore("tcfc");
-  const state = await loadState(store);
-  const save = () => store.setJSON("state", state);
-
-  if (req.method === "GET") {
-    await save();
-    return json(view(state));
-  }
-  if (req.method !== "POST") return json({ error: "Método não suportado" }, 405);
-
-  const body = await req.json();
-  const isAdmin = !!process.env.ADMIN_PASSWORD && body.password === process.env.ADMIN_PASSWORD;
-
-  if (body.action === "login") {
-    const r = authPlayer(state, body.user, body.pin, { create: true });
-    if (r.error) return json({ error: r.error }, 401);
-    await save();
-    return json({ ...view(state), created: !!r.created });
-  }
-
-  if (body.action === "schedule") {
-    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
-    const week = body.target === "current" ? state.week : nextWeekId(state.week);
-    let parsed;
-    try {
-      parsed = parseSchedule(body.text ?? "", week, state.registry);
-    } catch (err) {
-      return json({ error: err.message }, 400);
-    }
-    for (const p of parsed.players) state.registry[p.id] = { id: p.id, name: p.name, team: p.team };
-    ensureWallets(state, parsed.players, state.week);
-    if (body.target === "current") state.schedule = parsed;
-    else state.pending = parsed;
-    await save();
-    return json(view(state));
-  }
-
-  if (body.action === "results") {
-    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
-    const scores = body.scores ?? {};
-    for (const f of state.schedule.fixtures) {
-      const s = scores[f.id];
-      if (!s || typeof s.a !== "number" || typeof s.b !== "number") continue;
-      // Empate fica com o lado A
-      state.results[state.week][f.id] = {
-        a: s.a,
-        b: s.b,
-        winner: s.a >= s.b ? "A" : "B",
-        aId: f.a,
-        bId: f.b,
-      };
-    }
-    for (const id of Object.keys(state.wallets)) {
-      let w = state.wallets[id];
-      for (let i = 0; i < w.history.length; i++) {
-        const h = w.history[i];
-        if (h.type !== "bet" || h.status !== "open" || h.week !== state.week) continue;
-        const r = state.results[state.week][h.fixtureId];
-        if (r) w = settleBet(w, i, h.side === r.winner);
-      }
-      state.wallets[id] = w;
-    }
-    await save();
-    return json(view(state));
-  }
-    
+      const A = row
