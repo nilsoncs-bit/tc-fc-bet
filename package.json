@@ -1,0 +1,8 @@
+{
+  "name": "top-caraio-fc",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@netlify/blobs": "latest"
+  }
+}
