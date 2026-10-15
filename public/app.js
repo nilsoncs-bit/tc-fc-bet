@@ -57,4 +57,21 @@ function header() {
   return `
   <header class="top">
     <div class="brand"><span class="slash">/</span> TOP CARAIO <span class="accent">FC</span></div>
-    ${cur ? `
+    ${cur ? `<div class="userbox">${cur.name}<b>${cur.balance} GC</b></div>` : ""}
+    <nav>
+      ${tabs.map(([k, l]) => `<button class="pill ${tab === k ? "on" : ""}" data-tab="${k}">${l.toUpperCase()}</button>`).join("")}
+      ${session ? `<button class="pill" data-action="logout">SAIR</button>` : ""}
+    </nav>
+  </header>`;
+}
+
+function render() {
+  if (!state) return;
+  let body;
+  if (tab === "admin") body = admin();
+  else if (tab === "tabela") body = tabela();
+  else if (!session) body = loginView();
+  else body = { mercados, placar, regras }[tab]();
+  $("#app").innerHTML =
+    header() + `<main>${body}</main>` + (session && tab === "mercados" && slip ? slipView() : "");
+}
