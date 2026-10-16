@@ -1,3 +1,14 @@
+function pickLeg(fixtureId, market, side, team) {
+  const key = (l) =>
+    l.fixtureId === fixtureId && l.market === market && l.side === side && (l.team ?? null) === (team ?? null);
+  if (slip.some(key)) {
+    slip = slip.filter((l) => !key(l));
+    return;
+  }
+  slip = slip.filter((l) => l.fixtureId !== fixtureId);
+  slip.push({ fixtureId, market, side, team });
+}
+
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("button");
   if (!el) return;
@@ -10,13 +21,23 @@ document.addEventListener("click", async (e) => {
     } else if (el.dataset.action === "logout") {
       logout();
     } else if (el.dataset.pick) {
-      const same = slip && slip.fixtureId === el.dataset.pick && slip.side === el.dataset.side;
-      slip = same ? null : { fixtureId: el.dataset.pick, side: el.dataset.side, stake: 10 };
+      pickLeg(el.dataset.pick, el.dataset.market, el.dataset.side, el.dataset.team);
+      render();
+    } else if (el.hasAttribute("data-clear")) {
+      slip = [];
       render();
     } else if (el.hasAttribute("data-bet")) {
-      state = await post({ action: "bet", fixtureId: slip.fixtureId, side: slip.side, stake: slip.stake });
-      slip = null;
+      if (!slip.length) return;
+      const legs = slip.map(({ fixtureId, market, side, team }) => ({ fixtureId, market, side, team }));
+      state = slip.length === 1
+        ? await post({ action: "bet", ...legs[0], stake })
+        : await post({ action: "multi", legs, stake });
+      slip = [];
       alert("Aposta registrada!");
+      render();
+    } else if (el.hasAttribute("data-emote-save")) {
+      state = await post({ action: "emote", emote: $("#emote").value });
+      alert("Emote salvo.");
       render();
     } else if (el.hasAttribute("data-adminlogin")) {
       adminPw = $("#pw").value;
@@ -24,6 +45,16 @@ document.addEventListener("click", async (e) => {
     } else if (el.hasAttribute("data-schedule")) {
       state = await post({ action: "schedule", password: adminPw, target: $("#target").value, text: $("#sched").value }, false);
       alert("Confrontos salvos.");
+      render();
+    } else if (el.hasAttribute("data-live-save")) {
+      const points = {};
+      document.querySelectorAll("input[data-live]").forEach((i) => {
+        const id = i.dataset.live;
+        points[id] ??= {};
+        if (i.value !== "") points[id][i.dataset.side] = Number(i.value);
+      });
+      state = await post({ action: "live", password: adminPw, progress: Number($("#prog").value), points }, false);
+      alert("Odds atualizadas.");
       render();
     } else if (el.hasAttribute("data-save")) {
       const scores = {};
@@ -42,11 +73,10 @@ document.addEventListener("click", async (e) => {
 });
 
 document.addEventListener("input", (e) => {
-  if (e.target.id !== "stake" || !slip) return;
-  slip.stake = Math.max(0, Math.floor(Number(e.target.value) || 0));
-  const f = fx(slip.fixtureId);
-  const o = slip.side === "A" ? f.oddA : f.oddB;
-  $("#pot").textContent = Math.floor(slip.stake * o);
+  if (e.target.id !== "stake") return;
+  stake = Math.max(0, Math.floor(Number(e.target.value) || 0));
+  const pot = document.getElementById("pot");
+  if (pot) pot.textContent = Math.floor(stake * totalOdd());
 });
 
 window.addEventListener("focus", load);

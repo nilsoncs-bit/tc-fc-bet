@@ -2,7 +2,8 @@ const API = "/.netlify/functions/game";
 let state = null;
 let session = JSON.parse(localStorage.getItem("tcfc-session") || "null");
 let tab = "mercados";
-let slip = null;
+let slip = [];
+let stake = 10;
 let adminPw = "";
 let loginMsg = "";
 
@@ -10,7 +11,10 @@ const $ = (s) => document.querySelector(s);
 const odd = (n) => n.toFixed(2).replace(".", ",");
 const num1 = (n) => n.toFixed(1).replace(".", ",");
 const fx = (id) => state.fixtures.find((f) => f.id === id);
-const isSel = (id, side) => (slip && slip.fixtureId === id && slip.side === side ? "sel" : "");
+const isSel = (id, market, side, team) =>
+  slip.some(
+    (l) => l.fixtureId === id && l.market === market && l.side === side && (l.team ?? null) === (team ?? null)
+  ) ? "sel" : "";
 const me = () => state?.players.find((p) => p.id === session?.user);
 
 async function load() {
@@ -47,7 +51,7 @@ async function login(user, pin) {
 function logout() {
   session = null;
   localStorage.removeItem("tcfc-session");
-  slip = null;
+  slip = [];
   render();
 }
 
@@ -57,7 +61,7 @@ function header() {
   return `
   <header class="top">
     <div class="brand"><span class="slash">/</span> TOP CARAIO <span class="accent">FC</span></div>
-    ${cur ? `<div class="userbox">${cur.name}<b>${cur.balance} GC</b></div>` : ""}
+    ${cur ? `<div class="userbox">${cur.emote} ${cur.name}<b>${cur.balance} GC</b></div>` : ""}
     <nav>
       ${tabs.map(([k, l]) => `<button class="pill ${tab === k ? "on" : ""}" data-tab="${k}">${l.toUpperCase()}</button>`).join("")}
       ${session ? `<button class="pill" data-action="logout">SAIR</button>` : ""}
@@ -73,5 +77,5 @@ function render() {
   else if (!session) body = loginView();
   else body = { mercados, placar, regras }[tab]();
   $("#app").innerHTML =
-    header() + `<main>${body}</main>` + (session && tab === "mercados" && slip ? slipView() : "");
+    header() + `<main>${body}</main>` + (session && tab === "mercados" && slip.length ? slipView() : "");
 }
