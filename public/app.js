@@ -57,7 +57,7 @@ function logout() {
 
 function header() {
   const cur = me();
-  const tabs = [["mercados", "Mercados"], ["tabela", "Tabela"], ["placar", "Placar"], ["regras", "Regras"], ["admin", "Admin"]];
+  const tabs = [["mercados", "Mercados"], ["tabela", "Tabela"], ["placar", "Placar"], ["apostas", "Apostas"], ["regras", "Regras"], ["admin", "Admin"]];
   return `
   <header class="top">
     <div class="brand"><span class="slash">/</span> TOP CARAIO <span class="accent">FC</span></div>
@@ -75,7 +75,7 @@ function render() {
   if (tab === "admin") body = admin();
   else if (tab === "tabela") body = tabela();
   else if (!session) body = loginView();
-  else body = { mercados, placar, regras }[tab]();
+  else body = { mercados, apostas: minhasApostas, placar, regras }[tab]();
   $("#app").innerHTML =
     header() + `<main>${body}</main>` + (session && tab === "mercados" && slip.length ? slipView() : "");
 }

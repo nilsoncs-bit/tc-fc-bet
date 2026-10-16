@@ -132,3 +132,66 @@ function regras() {
     Game Coins são virtuais: não podem ser convertidos, trocados ou sacados por dinheiro.
   </section>`;
 }
+
+function statusBadge(h) {
+  if (h.status === "open") return `<span class="badge open">EM ABERTO</span>`;
+  return h.status === "won" ? `<span class="badge won">GANHOU</span>` : `<span class="badge lost">PERDEU</span>`;
+}
+
+function betCard(h) {
+  const isMulti = h.type === "multi";
+  const title = isMulti ? `Múltipla de ${h.legs.length}` : "Aposta simples";
+  const legs = isMulti ? h.legs : [h];
+  const rows = legs.map((l) => {
+    const f = state.fixtures.find((x) => x.id === l.fixtureId && h.week === state.week);
+    const score = f?.result ? ` · placar ${f.result.a} x ${f.result.b}` : "";
+    return `<div class="leg">
+      <div class="muted">${l.match ?? "Confronto antigo"}</div>
+      <div><b>${l.pick ?? l.side}</b> @ ${odd(l.odd)}${score}</div>
+    </div>`;
+  }).join("");
+  let money;
+  if (h.status === "open") money = `Retorno possível: <b>${Math.floor(h.stake * h.odd)} GC</b>`;
+  else if (h.status === "won") money = `Recebeu: <b>${h.payout} GC</b>`;
+  else money = `Perdeu: <b>${h.stake} GC</b>`;
+  return `
+  <section class="card pad bet">
+    <div class="row"><b>${title}</b><span class="muted">${h.week}</span>${statusBadge(h)}</div>
+    ${rows}
+    <div class="row"><span>Apostado: <b>${h.stake} GC</b> · Odd total <b>${odd(h.odd)}</b></span></div>
+    <div class="row"><span>${money}</span></div>
+  </section>`;
+}
+
+function minhasApostas() {
+  const u = me();
+  if (!u) return loginView();
+  const hist = u.history.slice().reverse();
+  const bets = hist.filter((h) => h.type === "bet" || h.type === "multi");
+  const stip = hist.filter((h) => h.type === "stipend");
+  const open = bets.filter((h) => h.status === "open");
+  const settled = bets.filter((h) => h.status === "won" || h.status === "lost");
+  const staked = settled.reduce((s, h) => s + h.stake, 0);
+  const paid = settled.reduce((s, h) => s + (h.payout ?? 0), 0);
+  const wins = settled.filter((h) => h.status === "won").length;
+  const openStake = open.reduce((s, h) => s + h.stake, 0);
+  const net = paid - staked;
+  return `
+  <h2 class="section">MINHAS APOSTAS</h2>
+  <section class="card pad">
+    <div class="row"><span>Saldo</span><b>${u.balance} GC</b></div>
+    <div class="row"><span>Em aberto</span><b>${open.length} aposta(s) · ${openStake} GC</b></div>
+    <div class="row"><span>Acertos</span><b>${wins} de ${settled.length}</b></div>
+    <div class="row"><span>Apostado (encerradas)</span><b>${staked} GC</b></div>
+    <div class="row"><span>Recebido</span><b>${paid} GC</b></div>
+    <div class="row"><span>Lucro líquido</span><b class="${net >= 0 ? "pos" : "neg"}">${net >= 0 ? "+" : ""}${net} GC</b></div>
+  </section>
+
+  <h2 class="section">APOSTAS</h2>
+  ${bets.length ? bets.map(betCard).join("") : `<section class="card pad muted">Você ainda não fez apostas.</section>`}
+
+  <h2 class="section">BÔNUS SEMANAL</h2>
+  <section class="card pad">
+    ${stip.length ? stip.map((s) => `<div class="row"><span>${s.weekId}</span><b>+${s.amount} GC</b></div>`).join("") : `<span class="muted">Nenhum bônus ainda.</span>`}
+  </section>`;
+}

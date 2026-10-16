@@ -1,0 +1,8 @@
+.badge { font-size:11px; font-weight:800; border-radius:5px; padding:3px 8px; margin-left:auto; }
+.badge.open { background:#2f5fe0; color:#fff; }
+.badge.won { background:#1f9d55; color:#fff; }
+.badge.lost { background:#c0392b; color:#fff; }
+.leg { display:flex; justify-content:space-between; gap:8px; padding:6px 0; border-top:1px solid #1d2a48; flex-wrap:wrap; }
+.bet { margin-bottom:12px; }
+.pos { color:#4ade80; }
+.neg { color:#ff6b6b; }
