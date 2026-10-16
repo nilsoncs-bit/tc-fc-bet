@@ -31,14 +31,19 @@ function shuffle(arr) {
   return arr;
 }
 
-// Estimativa de % de playoffs: simula os jogos restantes com adversários aleatórios
+// Probabilidade de playoffs: os jogos restantes são simulados com a projeção de cada time
+// como pontuação esperada, e os adversários são sorteados a cada semana
 function playoffChances(rows, sims = 2000) {
   const counts = Object.fromEntries(rows.map((r) => [r.id, 0]));
   for (let s = 0; s < sims; s++) {
-    const sim = rows.map((r) => {
-      const g = r.w + r.l;
-      return { id: r.id, w: r.w, l: r.l, pf: r.pf, mean: g ? r.pf / g : 100, rem: Math.max(0, TOTAL_SEASON_WEEKS - g) };
-    });
+    const sim = rows.map((r) => ({
+      id: r.id,
+      w: r.w,
+      l: r.l,
+      pf: r.pf,
+      mean: r.mean,
+      rem: Math.max(0, TOTAL_SEASON_WEEKS - (r.w + r.l)),
+    }));
     const maxRem = Math.max(0, ...sim.map((x) => x.rem));
     for (let wk = 0; wk < maxRem; wk++) {
       const pool = shuffle(sim.filter((x) => x.rem > wk));
@@ -60,7 +65,13 @@ function playoffChances(rows, sims = 2000) {
 }
 
 export function standingsView(state) {
-  const rows = standingsRows(state).sort((x, y) => y.w - x.w || y.pf - x.pf);
+  const rows = standingsRows(state)
+    .map((r) => {
+      const player = state.schedule.players.find((p) => p.id === r.id);
+      const g = r.w + r.l;
+      return { ...r, mean: player ? player.projection : g ? r.pf / g : 100 };
+    })
+    .sort((x, y) => y.w - x.w || y.pf - x.pf);
   const chances = playoffChances(rows);
   return rows.map((r) => ({
     id: r.id,
