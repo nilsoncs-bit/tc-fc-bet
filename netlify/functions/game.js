@@ -63,6 +63,9 @@ function buildLeg(state, item) {
   if (!f) throw new Error("Confronto não encontrado");
   if (state.results[state.week][f.id]) throw new Error("Confronto já encerrado");
   const o = oddsFor(state, f);
+  const teamA = playerOf(state, f.a).team;
+  const teamB = playerOf(state, f.b).team;
+  const match = `${teamA} x ${teamB}`;
   if (item.market === "tot") {
     if (item.team !== "a" && item.team !== "b") throw new Error("Equipe inválida");
     if (item.side !== "O" && item.side !== "U") throw new Error("Lado inválido");
@@ -74,10 +77,19 @@ function buildLeg(state, item) {
       side: item.side,
       line: t.line,
       odd: item.side === "O" ? t.oddO : t.oddU,
+      match,
+      pick: `${item.team === "a" ? teamA : teamB}: ${item.side === "O" ? "mais" : "menos"} de ${t.line}`,
     };
   }
   if (item.side !== "A" && item.side !== "B") throw new Error("Lado inválido");
-  return { fixtureId: f.id, market: "ml", side: item.side, odd: item.side === "A" ? o.oddA : o.oddB };
+  return {
+    fixtureId: f.id,
+    market: "ml",
+    side: item.side,
+    odd: item.side === "A" ? o.oddA : o.oddB,
+    match,
+    pick: item.side === "A" ? teamA : teamB,
+  };
 }
 
 function view(state) {
