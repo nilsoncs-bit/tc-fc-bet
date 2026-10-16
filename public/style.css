@@ -36,3 +36,4 @@ td.num, th.num { text-align:right; }
 select { padding:8px; border-radius:6px; border:1px solid #2a3a60; background:var(--row); color:var(--txt); width:100%; }
 .row select, .row .pw { width:100%; }
 textarea { width:100%; min-height:200px; padding:8px; border-radius:6px; border:1px solid #2a3a60; background:var(--row); color:var(--txt); font-family:inherit; margin-bottom:8px; }
+.slip { padding-bottom: 64px; }
