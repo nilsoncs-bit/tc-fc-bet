@@ -24,6 +24,8 @@ Nome | Time | Projeção"></textarea>
     <button class="btn" data-schedule>SALVAR CONFRONTOS</button>
   </section>
 
+  ${liveSection()}
+
   <h2 class="section">RESULTADOS — ${state.week}</h2>
   <section class="card pad">
     ${state.fixtures.map((f) => `
@@ -33,5 +35,21 @@ Nome | Time | Projeção"></textarea>
         <input class="score" type="number" min="0" data-fid="${f.id}" data-side="b" value="${f.result?.b ?? ""}">
       </div>`).join("")}
     <button class="btn" data-save>SALVAR E LIQUIDAR</button>
+  </section>`;
+}
+
+function liveSection() {
+  return `
+  <h2 class="section">AO VIVO — ${state.week}</h2>
+  <section class="card pad">
+    <div class="row"><span>Progresso da semana (%)</span><input class="score" id="prog" type="number" min="0" max="100" value="${Math.round((state.progress || 0) * 100)}"></div>
+    <p class="muted">Pontos atuais de cada jogador (opcional). Sem pontos, a odd usa só a projeção. Apostas já feitas não mudam.</p>
+    ${state.fixtures.map((f) => `
+      <div class="row">
+        <span>${f.a} x ${f.b}</span>
+        <input class="score" type="number" step="0.1" data-live="${f.id}" data-side="a" value="${f.live?.a ?? ""}">
+        <input class="score" type="number" step="0.1" data-live="${f.id}" data-side="b" value="${f.live?.b ?? ""}">
+      </div>`).join("")}
+    <button class="btn" data-live-save>ATUALIZAR ODDS</button>
   </section>`;
 }
