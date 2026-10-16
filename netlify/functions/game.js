@@ -1,6 +1,6 @@
 import { getStore } from "@netlify/blobs";
 import { placeBet, settleBet } from "./engine.js";
-import { PLAYERS, FIXTURES } from "./data.js";
+import { PLAYERS, FIXTURES, EMOTES } from "./data.js";
 import { json, weekNum, currentWeek, nextWeekId, ensureWallets } from "../lib/utils.js";
 import { parseSchedule } from "../lib/schedule.js";
 import { authPlayer } from "../lib/auth.js";
@@ -14,6 +14,7 @@ async function loadState(store) {
   state.auth ??= {};
   state.results ??= {};
   state.registry ??= {};
+  state.emotes ??= {};
   state.results[state.week] ??= {};
   if (!state.live || state.live.week !== state.week) {
     state.live = { week: state.week, progress: 0, points: {} };
@@ -29,13 +30,19 @@ async function loadState(store) {
   return state;
 }
 
+const emoteOf = (state, id) => state.emotes?.[id] ?? EMOTES[id] ?? "⚽";
 const playerOf = (state, id) => state.schedule.players.find((p) => p.id === id) ?? state.registry[id];
 const oddsFor = (state, f) =>
   fixtureOdds(state, f, playerOf(state, f.a).projection, playerOf(state, f.b).projection);
 
-// Uma perna ganha ou perde conforme o mercado (vencedor ou over/under)
+// Uma perna ganha ou perde conforme o mercado
 const legWon = (leg, r) => {
-  if ((leg.market ?? "ml") === "ou") {
+  const market = leg.market ?? "ml";
+  if (market === "tot") {
+    const pts = leg.team === "a" ? r.a : r.b;
+    return leg.side === "O" ? pts > leg.line : pts < leg.line;
+  }
+  if (market === "ou") {
     const total = r.a + r.b;
     return leg.side === "O" ? total > leg.line : total < leg.line;
   }
@@ -56,9 +63,18 @@ function buildLeg(state, item) {
   if (!f) throw new Error("Confronto não encontrado");
   if (state.results[state.week][f.id]) throw new Error("Confronto já encerrado");
   const o = oddsFor(state, f);
-  if (item.market === "ou") {
+  if (item.market === "tot") {
+    if (item.team !== "a" && item.team !== "b") throw new Error("Equipe inválida");
     if (item.side !== "O" && item.side !== "U") throw new Error("Lado inválido");
-    return { fixtureId: f.id, market: "ou", side: item.side, line: o.line, odd: item.side === "O" ? o.oddO : o.oddU };
+    const t = o.tot[item.team];
+    return {
+      fixtureId: f.id,
+      market: "tot",
+      team: item.team,
+      side: item.side,
+      line: t.line,
+      odd: item.side === "O" ? t.oddO : t.oddU,
+    };
   }
   if (item.side !== "A" && item.side !== "B") throw new Error("Lado inválido");
   return { fixtureId: f.id, market: "ml", side: item.side, odd: item.side === "A" ? o.oddA : o.oddB };
@@ -75,6 +91,7 @@ function view(state) {
       id: p.id,
       name: p.name,
       team: p.team,
+      emote: emoteOf(state, p.id),
       balance: state.wallets[p.id].balance,
       history: state.wallets[p.id].history,
     })),
@@ -86,16 +103,16 @@ function view(state) {
         id: f.id,
         a: A.team,
         b: B.team,
+        aEmote: emoteOf(state, f.a),
+        bEmote: emoteOf(state, f.b),
         oddA: o.oddA,
         oddB: o.oddB,
-        oddO: o.oddO,
-        oddU: o.oddU,
-        line: o.line,
+        tot: o.tot,
         result: state.results[state.week][f.id] ?? null,
         live: state.live.points[f.id] ?? null,
       };
     }),
-    standings: standingsView(state),
+    standings: standingsView(state).map((r) => ({ ...r, emote: emoteOf(state, r.id) })),
   };
 }
 
@@ -193,6 +210,17 @@ export default async (req) => {
   const auth = authPlayer(state, body.user, body.pin);
   if (auth.error) return json({ error: auth.error }, 401);
 
+  if (body.action === "emote") {
+    const text = String(body.emote ?? "").trim();
+    const graphemes = [...new Intl.Segmenter().segment(text)];
+    if (graphemes.length !== 1 || text.length > 16) {
+      return json({ error: "Escolha exatamente 1 emoji" }, 400);
+    }
+    state.emotes[body.user] = text;
+    await save();
+    return json(view(state));
+  }
+
   if (body.action === "bet") {
     try {
       const leg = buildLeg(state, body);
@@ -203,9 +231,10 @@ export default async (req) => {
           h.status === "open" &&
           h.week === state.week &&
           h.fixtureId === leg.fixtureId &&
-          (h.market ?? "ml") === leg.market
+          (h.market ?? "ml") === leg.market &&
+          (h.team ?? null) === (leg.team ?? null)
       );
-      if (dup) return json({ error: "Você já apostou neste mercado do confronto" }, 400);
+      if (dup) return json({ error: "Você já apostou neste mercado" }, 400);
       const nw = placeBet(w, body.stake, leg.odd);
       const last = nw.history.length - 1;
       nw.history[last] = { ...nw.history[last], ...leg, week: state.week };
@@ -223,7 +252,7 @@ export default async (req) => {
       if (items.length < 2) throw new Error("A múltipla precisa de pelo menos 2 seleções");
       const ids = items.map((i) => i.fixtureId);
       if (new Set(ids).size !== ids.length) {
-        throw new Error("Não pode haver dois lados do mesmo confronto na múltipla");
+        throw new Error("Só é permitida uma seleção por confronto na múltipla");
       }
       const legs = items.map((i) => buildLeg(state, i));
       const odd = +legs.reduce((acc, l) => acc * l.odd, 1).toFixed(2);
