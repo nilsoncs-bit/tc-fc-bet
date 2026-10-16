@@ -122,7 +122,7 @@ export default async (req) => {
   const save = () => store.setJSON("state", state);
 
   if (req.method === "GET") {
-    await save();
+    // Leitura não grava: evita sobrescrever apostas feitas em paralelo
     return json(view(state));
   }
   if (req.method !== "POST") return json({ error: "Método não suportado" }, 405);
