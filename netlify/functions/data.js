@@ -46,5 +46,23 @@ export const SEED = {
   victor: { w: 4, l: 1, pf: 833.3, pa: 658.9 },
 };
 
+// Emote padrão de cada jogador. Cada um pode trocar o próprio no app (aba Placar).
+export const EMOTES = {
+  reginaldo: "🐨",
+  bernardo: "🪖",
+  leonardo: "🔥",
+  marcos: "🦜",
+  nilson: "👹",
+  odireston: "👨‍🎤",
+  heitor: "💰",
+  julio: "🐔",
+  andre: "☕",
+  lucca: "🐶",
+  gustavo: "🫎",
+  uendel: "🙂",
+  victor: "🫜",
+  matheus: "☃️",
+};
+
 export const PLAYOFF_SPOTS = 6;
-export const TOTAL_SEASON_WEEKS = 10; // ajuste para o número real de semanas da temporada regular
+export const TOTAL_SEASON_WEEKS = 15;
