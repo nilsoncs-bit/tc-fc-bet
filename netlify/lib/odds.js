@@ -1,13 +1,10 @@
 import { matchOdds, normalCdf, oddFromProbability, DEFAULT_SIGMA } from "../functions/engine.js";
 
-// Under de pontos por equipe sempre com odd fixa
+// Under sempre com odd fixa; over é calculada pela projeção
 export const UNDER_ODD = 2.1;
 
-// Linha da equipe: projeção arredondada para baixo + 0,5 (ex.: 115,6 -> 115,5; 121 -> 121,5)
-const lineOf = (proj) => Math.floor(proj) + 0.5;
-
-// Com pontos ao vivo, a média vira "pontos atuais + parte que falta da projeção" e a incerteza diminui.
-// Sem pontos, usa só a projeção da semana.
+// Odds do confronto. Com pontos ao vivo, a média vira "pontos atuais + parte que falta da projeção"
+// e a incerteza diminui. Sem pontos, usa só a projeção da semana.
 export function fixtureOdds(state, f, projA, projB) {
   const progress = Math.min(1, Math.max(0, state.live?.progress ?? 0));
   const remain = 1 - progress;
@@ -21,16 +18,14 @@ export function fixtureOdds(state, f, projA, projB) {
     sigma = DEFAULT_SIGMA * Math.sqrt(Math.max(0.05, remain));
   }
   const ml = matchOdds(mA, mB, { sigma });
-
-  const teamMarket = (proj, mean) => {
-    const line = lineOf(proj);
-    const pOver = 1 - normalCdf((line - mean) / sigma);
-    return { line, oddO: oddFromProbability(pOver), oddU: UNDER_ODD };
-  };
-
+  const line = Math.floor(projA + projB) + 0.5;
+  const sd = sigma * Math.SQRT2;
+  const pOver = 1 - normalCdf((line - (mA + mB)) / sd);
   return {
     oddA: ml.oddA,
     oddB: ml.oddB,
-    tot: { a: teamMarket(projA, mA), b: teamMarket(projB, mB) },
+    line,
+    oddO: oddFromProbability(pOver),
+    oddU: UNDER_ODD,
   };
 }
