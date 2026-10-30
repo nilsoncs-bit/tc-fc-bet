@@ -28,12 +28,39 @@ document.addEventListener("click", async (e) => {
       render();
     } else if (el.hasAttribute("data-bet")) {
       if (!slip.length) return;
+      const snapshot = slip.map((l) => ({ label: legLabel(l), odd: legOdd(l) }));
+      const total = totalOdd();
+      const apostado = stake;
       const legs = slip.map(({ fixtureId, market, side, team }) => ({ fixtureId, market, side, team }));
+      const semana = state.week;
       state = slip.length === 1
         ? await post({ action: "bet", ...legs[0], stake })
         : await post({ action: "multi", legs, stake });
       slip = [];
-      alert("Aposta registrada!");
+      const num = (me()?.history ?? []).filter((h) => h.type === "bet" || h.type === "multi").length;
+      recibo = { legs: snapshot, odd: total, stake: apostado, retorno: Math.floor(apostado * total), num, week: semana };
+      render();
+    } else if (el.hasAttribute("data-recibo-fechar")) {
+      recibo = null;
+      render();
+    } else if (el.dataset.filtro) {
+      filtroApostas = el.dataset.filtro;
+      render();
+    } else if (el.hasAttribute("data-theme-toggle")) {
+      applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+      render();
+    } else if (el.hasAttribute("data-novidades")) {
+      modalNov = { pagina: 0 };
+      render();
+    } else if (el.hasAttribute("data-nov-next")) {
+      modalNov.pagina = Math.min(modalNov.pagina + 1, NOVIDADES.paginas.length - 1);
+      render();
+    } else if (el.hasAttribute("data-nov-prev")) {
+      modalNov.pagina = Math.max(modalNov.pagina - 1, 0);
+      render();
+    } else if (el.hasAttribute("data-nov-fechar")) {
+      localStorage.setItem("tcfc-novidades-visto", NOVIDADES.versao);
+      modalNov = null;
       render();
     } else if (el.hasAttribute("data-emote-save")) {
       state = await post({ action: "emote", emote: $("#emote").value });
@@ -110,4 +137,5 @@ document.addEventListener("input", (e) => {
 });
 
 window.addEventListener("focus", load);
+initTheme();
 load();

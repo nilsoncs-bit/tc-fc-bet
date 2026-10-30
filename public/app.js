@@ -6,6 +6,10 @@ let slip = [];
 let stake = 10;
 let adminPw = "";
 let loginMsg = "";
+let filtroApostas = "todas";
+let recibo = null;
+let modalNov = null;
+let primeiraCarga = true;
 
 const $ = (s) => document.querySelector(s);
 const odd = (n) => n.toFixed(2).replace(".", ",");
@@ -17,9 +21,24 @@ const isSel = (id, market, side, team) =>
   ) ? "sel" : "";
 const me = () => state?.players.find((p) => p.id === session?.user);
 
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  localStorage.setItem("tcfc-tema", t);
+}
+
+function initTheme() {
+  const salvo = localStorage.getItem("tcfc-tema");
+  const claro = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+  document.documentElement.dataset.theme = salvo || (claro ? "light" : "dark");
+}
+
 async function load() {
   if (state && (document.hidden || tab === "admin")) return;
   state = await (await fetch(API)).json();
+  if (primeiraCarga) {
+    primeiraCarga = false;
+    if (localStorage.getItem("tcfc-novidades-visto") !== NOVIDADES.versao) modalNov = { pagina: 0 };
+  }
   render();
 }
 
@@ -57,16 +76,27 @@ function logout() {
 
 function header() {
   const cur = me();
-  const tabs = [["mercados", "Mercados"], ["tabela", "Tabela"], ["placar", "Placar"], ["apostas", "Apostas"], ["regras", "Regras"], ["admin", "Admin"]];
   return `
   <header class="top">
-    <div class="brand"><span class="slash">/</span> TOP CARAIO <span class="accent">FC</span></div>
-    ${cur ? `<div class="userbox">${cur.emote} ${cur.name}<b>${cur.balance} GC</b></div>` : ""}
-    <nav>
-      ${tabs.map(([k, l]) => `<button class="pill ${tab === k ? "on" : ""}" data-tab="${k}">${l.toUpperCase()}</button>`).join("")}
-      ${session ? `<button class="pill" data-action="logout">SAIR</button>` : ""}
-    </nav>
+    <div class="brand"><img src="escudo.png" alt="" class="logo-sm">TOP CARAIO FC</div>
+    ${cur ? `<div class="userbox">${cur.emote} ${cur.name}<b>🪙 ${cur.balance}</b></div>` : ""}
   </header>`;
+}
+
+const TABS = [
+  ["mercados", "🏟️", "Mercados"],
+  ["apostas", "📜", "Apostas"],
+  ["tabela", "🏛️", "Tabela"],
+  ["placar", "🛡️", "Placar"],
+  ["mais", "☰", "Mais"],
+];
+
+function tabbar() {
+  const ativa = (k) => tab === k || (k === "mais" && (tab === "regras" || tab === "admin"));
+  return `
+  <nav class="tabbar">
+    ${TABS.map(([k, i, l]) => `<button class="tab ${ativa(k) ? "on" : ""}" data-tab="${k}"><span>${i}</span><small>${l}</small></button>`).join("")}
+  </nav>`;
 }
 
 function render() {
@@ -74,8 +104,26 @@ function render() {
   let body;
   if (tab === "admin") body = admin();
   else if (tab === "tabela") body = tabela();
-  else if (!session) body = loginView();
-  else body = { mercados, apostas: minhasApostas, placar, regras }[tab]();
+  else if (tab === "mais") body = mais();
+  else if (tab === "regras") body = regras();
+  else if (!session && (tab === "mercados" || tab === "apostas")) body = loginView();
+  else body = { mercados, apostas, placar }[tab]();
   $("#app").innerHTML =
-    header() + `<main>${body}</main>` + (session && tab === "mercados" && slip.length ? slipView() : "");
+    header() +
+    `<main>${body}</main>` +
+    (session && tab === "mercados" && slip.length ? slipView() : "") +
+    tabbar() +
+    (recibo ? reciboView() : "") +
+    (modalNov ? novidadesView() : "");
 }
+
+let toqueX = null;
+document.addEventListener("touchstart", (e) => { toqueX = e.touches[0].clientX; }, { passive: true });
+document.addEventListener("touchend", (e) => {
+  if (!modalNov || toqueX === null) return;
+  const dx = e.changedTouches[0].clientX - toqueX;
+  toqueX = null;
+  const total = NOVIDADES.paginas.length;
+  if (dx < -50 && modalNov.pagina < total - 1) { modalNov.pagina++; render(); }
+  if (dx > 50 && modalNov.pagina > 0) { modalNov.pagina--; render(); }
+});
