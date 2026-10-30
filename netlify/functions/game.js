@@ -97,6 +97,7 @@ function view(state) {
   return {
     week: state.week,
     progress: state.live.progress,
+    frozen: state.frozen === state.week,
     scheduleWeek: cfg.week,
     pendingWeek: state.pending?.week ?? null,
     players: cfg.players.map((p) => ({
@@ -126,6 +127,26 @@ function view(state) {
     }),
     standings: standingsView(state).map((r) => ({ ...r, emote: emoteOf(state, r.id) })),
   };
+}
+
+function settleWeek(state, week) {
+  const res = state.results[week] ?? {};
+  for (const id of Object.keys(state.wallets)) {
+    let w = state.wallets[id];
+    for (let i = 0; i < w.history.length; i++) {
+      const h = w.history[i];
+      if (h.status !== "open" || h.week !== week) continue;
+      if (h.type === "bet") {
+        const r = res[h.fixtureId];
+        if (r) w = settleBet(w, i, legWon(h, r));
+      } else if (h.type === "multi") {
+        const outcomes = h.legs.map((leg) => (res[leg.fixtureId] ? legWon(leg, res[leg.fixtureId]) : null));
+        if (outcomes.includes(false)) w = settleMulti(w, i, false);
+        else if (outcomes.every((o) => o === true)) w = settleMulti(w, i, true);
+      }
+    }
+    state.wallets[id] = w;
+  }
 }
 
 export default async (req) => {
@@ -218,6 +239,54 @@ export default async (req) => {
     return json(view(state));
   }
 
+  if (body.action === "freeze") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    state.frozen = state.frozen === state.week ? null : state.week;
+    await save();
+    return json(view(state));
+  }
+
+  if (body.action === "reopen") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    const settled = Object.values(state.wallets).some((w) =>
+      w.history.some((h) => h.week === state.week && (h.status === "won" || h.status === "lost"))
+    );
+    if (settled) return json({ error: "Há apostas já liquidadas nesta rodada. Não é possível reabrir." }, 400);
+    state.results[state.week] = {};
+    await save();
+    return json(view(state));
+  }
+
+  if (body.action === "resetPin") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    if (!state.auth[body.target]) return json({ error: "Este jogador ainda não tem PIN" }, 400);
+    delete state.auth[body.target];
+    await save();
+    return json(view(state));
+  }
+
+  if (body.action === "settlePrevious") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    const week = String(body.week ?? "").trim();
+    if (!/^\d{4}-W\d{1,2}$/.test(week)) return json({ error: "Semana inválida. Use o formato 2026-W43" }, 400);
+    let parsed;
+    try {
+      parsed = parseSchedule(body.text ?? "", week, state.registry);
+    } catch (err) {
+      return json({ error: err.message }, 400);
+    }
+    const scores = body.scores ?? {};
+    state.results[week] ??= {};
+    for (const f of parsed.fixtures) {
+      const s = scores[f.id];
+      if (!s || !Number.isFinite(s.a) || !Number.isFinite(s.b)) continue;
+      state.results[week][f.id] = { a: s.a, b: s.b, winner: s.a >= s.b ? "A" : "B", aId: f.a, bId: f.b };
+    }
+    settleWeek(state, week);
+    await save();
+    return json(view(state));
+  }
+
   // Daqui em diante, toda ação de jogador exige nome + PIN válidos
   const auth = authPlayer(state, body.user, body.pin);
   if (auth.error) return json({ error: auth.error }, 401);
@@ -234,6 +303,7 @@ export default async (req) => {
   }
 
   if (body.action === "bet") {
+    if (state.frozen === state.week) return json({ error: "Apostas congeladas nesta rodada" }, 400);
     try {
       const leg = buildLeg(state, body);
       const w = state.wallets[body.user];
@@ -259,6 +329,7 @@ export default async (req) => {
   }
 
   if (body.action === "multi") {
+    if (state.frozen === state.week) return json({ error: "Apostas congeladas nesta rodada" }, 400);
     try {
       const items = Array.isArray(body.legs) ? body.legs : [];
       if (items.length < 2) throw new Error("A múltipla precisa de pelo menos 2 seleções");
