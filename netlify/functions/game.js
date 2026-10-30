@@ -1,4 +1,5 @@
 import { getStore } from "@netlify/blobs";
+import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
 import { placeBet, settleBet, winProbability } from "./engine.js";
 import { PLAYERS, FIXTURES, EMOTES } from "./data.js";
 import { json, weekNum, currentWeek, nextWeekId, ensureWallets } from "../lib/utils.js";
@@ -16,10 +17,10 @@ async function loadState(store) {
   state.registry ??= {};
   state.emotes ??= {};
   state.duels ??= {};
+  state.ajustes ??= [];
   state.results[state.week] ??= {};
-  if (!state.live || state.live.week !== state.week) {
-    state.live = { week: state.week, progress: 0, points: {} };
-  }
+  if (!state.live || state.live.week !== state.week) state.live = { week: state.week, teams: {} };
+  state.live.teams ??= {};
   state.schedule ??= { week: state.week, players: PLAYERS, fixtures: FIXTURES };
   if (state.pending && weekNum(state.pending.week) <= weekNum(state.week)) {
     state.schedule = state.pending;
@@ -33,10 +34,11 @@ async function loadState(store) {
 
 const emoteOf = (state, id) => state.emotes?.[id] ?? EMOTES[id] ?? "⚽";
 const playerOf = (state, id) => state.schedule.players.find((p) => p.id === id) ?? state.registry[id];
+const nomeOf = (state, id) => state.registry[id]?.name ?? id;
+const teamOf = (state, id) => state.registry[id]?.team ?? id;
 const oddsFor = (state, f) =>
   fixtureOdds(state, f, playerOf(state, f.a).projection, playerOf(state, f.b).projection);
 
-// Uma perna ganha ou perde conforme o mercado
 const legWon = (leg, r) => {
   const market = leg.market ?? "ml";
   if (market === "tot") {
@@ -49,6 +51,15 @@ const legWon = (leg, r) => {
   }
   return leg.side === r.winner;
 };
+
+// Quem é o alvo de cada perna (a favor e contra), usado nas estatísticas
+function alvosDaPerna(leg) {
+  if ((leg.market ?? "ml") === "tot") {
+    const alvo = leg.team === "a" ? leg.ta : leg.tb;
+    return leg.side === "O" ? { favor: alvo } : { contra: alvo };
+  }
+  return leg.side === "A" ? { favor: leg.ta, contra: leg.tb } : { favor: leg.tb, contra: leg.ta };
+}
 
 function settleMulti(wallet, index, won) {
   const bet = wallet.history[index];
@@ -64,76 +75,33 @@ function buildLeg(state, item) {
   if (!f) throw new Error("Confronto não encontrado");
   if (state.results[state.week][f.id]) throw new Error("Confronto já encerrado");
   const o = oddsFor(state, f);
-  const teamA = playerOf(state, f.a).team;
-  const teamB = playerOf(state, f.b).team;
-  const match = `${teamA} x ${teamB}`;
+  const base = { fixtureId: f.id, ta: f.a, tb: f.b };
+  const teamA = teamOf(state, f.a);
+  const teamB = teamOf(state, f.b);
   if (item.market === "tot") {
     if (item.team !== "a" && item.team !== "b") throw new Error("Equipe inválida");
     if (item.side !== "O" && item.side !== "U") throw new Error("Lado inválido");
     const t = o.tot[item.team];
+    const nome = item.team === "a" ? teamA : teamB;
     return {
-      fixtureId: f.id,
+      ...base,
       market: "tot",
       team: item.team,
       side: item.side,
       line: t.line,
       odd: item.side === "O" ? t.oddO : t.oddU,
-      match,
-      pick: `${item.team === "a" ? teamA : teamB}: ${item.side === "O" ? "mais" : "menos"} de ${t.line}`,
+      match: `${teamA} x ${teamB}`,
+      pick: `${nome}: ${item.side === "O" ? "mais" : "menos"} de ${t.line}`,
     };
   }
   if (item.side !== "A" && item.side !== "B") throw new Error("Lado inválido");
   return {
-    fixtureId: f.id,
+    ...base,
     market: "ml",
     side: item.side,
     odd: item.side === "A" ? o.oddA : o.oddB,
-    match,
+    match: `${teamA} x ${teamB}`,
     pick: item.side === "A" ? teamA : teamB,
-  };
-}
-
-function view(state) {
-  const cfg = state.schedule;
-  return {
-    week: state.week,
-    progress: state.live.progress,
-    frozen: state.frozen === state.week,
-    scheduleWeek: cfg.week,
-    pendingWeek: state.pending?.week ?? null,
-    players: cfg.players.map((p) => ({
-      id: p.id,
-      name: p.name,
-      team: p.team,
-      emote: emoteOf(state, p.id),
-      balance: state.wallets[p.id].balance,
-      history: state.wallets[p.id].history,
-    })),
-    fixtures: cfg.fixtures.map((f) => {
-      const A = playerOf(state, f.a);
-      const B = playerOf(state, f.b);
-      const o = oddsFor(state, f);
-      return {
-        id: f.id,
-        a: A.team,
-        b: B.team,
-        aEmote: emoteOf(state, f.a),
-        bEmote: emoteOf(state, f.b),
-        oddA: o.oddA,
-        oddB: o.oddB,
-        tot: o.tot,
-        result: state.results[state.week][f.id] ?? null,
-        live: state.live.points[f.id] ?? null,
-      };
-    }),
-    standings: standingsView(state).map((r) => ({ ...r, emote: emoteOf(state, r.id) })),
-    duels: Object.values(state.duels).map((d) => ({
-      ...d,
-      nomeA: nomeOf(state, d.desafiante), nomeB: nomeOf(state, d.desafiado),
-      nomeM: d.mediador ? nomeOf(state, d.mediador) : null,
-      emoteA: emoteOf(state, d.desafiante), emoteB: emoteOf(state, d.desafiado),
-      teamA: teamOf(state, d.desafiante), teamB: teamOf(state, d.desafiado),
-    })),
   };
 }
 
@@ -157,9 +125,20 @@ function settleWeek(state, week) {
   }
 }
 
-const nomeOf = (state, id) => state.registry[id]?.name ?? id;
-const teamOf = (state, id) => state.registry[id]?.team ?? id;
+// Desfaz os pagamentos de uma rodada, para lançar o resultado de novo
+function revertWeek(state, week) {
+  for (const w of Object.values(state.wallets)) {
+    w.history = w.history.map((h) => {
+      if (h.week !== week || (h.type !== "bet" && h.type !== "multi")) return h;
+      if (h.status !== "won" && h.status !== "lost") return h;
+      if (h.status === "won") w.balance -= h.payout ?? 0;
+      const { payout, ...rest } = h;
+      return { ...rest, status: "open" };
+    });
+  }
+}
 
+// ---------- 1x1 ----------
 const ptsOf = (state, week, pid) => {
   for (const r of Object.values(state.results[week] ?? {})) {
     if (r.aId === pid) return r.a;
@@ -241,16 +220,98 @@ function settleDuels(state) {
   }
 }
 
+// ---------- estatísticas ----------
+function statsView(state, escopo) {
+  const row = {};
+  for (const p of state.schedule.players) {
+    row[p.id] = { id: p.id, name: p.name, team: p.team, emote: emoteOf(state, p.id), favor: 0, contra: 0, favorW: 0, favorL: 0, decepcao: 0 };
+  }
+  const matriz = {};
+  for (const [uid, w] of Object.entries(state.wallets)) {
+    for (const h of w.history) {
+      if (h.type !== "bet" && h.type !== "multi") continue;
+      if (escopo === "rodada" && h.week !== state.week) continue;
+      if (h.status !== "open" && h.status !== "won" && h.status !== "lost") continue;
+      const legs = h.type === "multi" ? h.legs : [h];
+      for (const leg of legs) {
+        if (!leg.ta || !leg.tb) continue;
+        const { favor, contra } = alvosDaPerna(leg);
+        if (favor && row[favor]) {
+          row[favor].favor += h.stake;
+          if (h.type === "bet") {
+            if (h.status === "won") row[favor].favorW++;
+            if (h.status === "lost") { row[favor].favorL++; row[favor].decepcao += h.stake; }
+          }
+          matriz[uid] ??= {};
+          matriz[uid][favor] = (matriz[uid][favor] ?? 0) + h.stake;
+        }
+        if (contra && row[contra]) row[contra].contra += h.stake;
+      }
+    }
+  }
+  return { jogadores: Object.values(row), matriz };
+}
+
+function view(state) {
+  const cfg = state.schedule;
+  return {
+    week: state.week,
+    scheduleWeek: cfg.week,
+    pendingWeek: state.pending?.week ?? null,
+    frozen: state.frozen === state.week,
+    players: cfg.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      team: p.team,
+      emote: emoteOf(state, p.id),
+      projection: p.projection,
+      balance: state.wallets[p.id].balance,
+      history: state.wallets[p.id].history,
+    })),
+    fixtures: cfg.fixtures.map((f) => {
+      const A = playerOf(state, f.a);
+      const B = playerOf(state, f.b);
+      const o = oddsFor(state, f);
+      return {
+        id: f.id,
+        a: A.team,
+        b: B.team,
+        aEmote: emoteOf(state, f.a),
+        bEmote: emoteOf(state, f.b),
+        oddA: o.oddA,
+        oddB: o.oddB,
+        tot: o.tot,
+        result: state.results[state.week][f.id] ?? null,
+        live: state.live.teams[f.id] ?? null,
+      };
+    }),
+    standings: standingsView(state).map((r) => ({ ...r, emote: emoteOf(state, r.id) })),
+    duels: Object.values(state.duels).map((d) => ({
+      ...d,
+      nomeA: nomeOf(state, d.desafiante),
+      nomeB: nomeOf(state, d.desafiado),
+      nomeM: d.mediador ? nomeOf(state, d.mediador) : null,
+      emoteA: emoteOf(state, d.desafiante),
+      emoteB: emoteOf(state, d.desafiado),
+      teamA: teamOf(state, d.desafiante),
+      teamB: teamOf(state, d.desafiado),
+    })),
+    ajustes: state.ajustes.slice(-30).reverse(),
+    estatisticas: { rodada: statsView(state, "rodada"), temporada: statsView(state, "temporada") },
+  };
+}
+
+const save = (store, state) => {
+  settleDuels(state);
+  return store.setJSON("state", state);
+};
+
 export default async (req) => {
   const store = getStore("tcfc");
   const state = await loadState(store);
-  const save = () => {
-    settleDuels(state);
-    return store.setJSON("state", state);
-  };
 
   if (req.method === "GET") {
-    // Leitura não grava: evita sobrescrever apostas feitas em paralelo
+    await save(store, state);
     return json(view(state));
   }
   if (req.method !== "POST") return json({ error: "Método não suportado" }, 405);
@@ -261,7 +322,7 @@ export default async (req) => {
   if (body.action === "login") {
     const r = authPlayer(state, body.user, body.pin, { create: true });
     if (r.error) return json({ error: r.error }, 401);
-    await save();
+    await save(store, state);
     return json({ ...view(state), created: !!r.created });
   }
 
@@ -278,23 +339,31 @@ export default async (req) => {
     ensureWallets(state, parsed.players, state.week);
     if (body.target === "current") state.schedule = parsed;
     else state.pending = parsed;
-    await save();
+    await save(store, state);
     return json(view(state));
   }
 
   if (body.action === "live") {
     if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
-    const p = Number(body.progress);
-    const points = {};
-    for (const [fid, v] of Object.entries(body.points ?? {})) {
-      if (typeof v?.a === "number" && typeof v?.b === "number") points[fid] = { a: v.a, b: v.b };
+    const teams = {};
+    for (const f of state.schedule.fixtures) {
+      const t = body.teams?.[f.id];
+      if (!t) continue;
+      const entry = {};
+      for (const side of ["a", "b"]) {
+        const s = t[side];
+        if (!s || (s.pct == null && s.pts == null)) continue;
+        const pct = Number(s.pct ?? 0);
+        const pts = Number(s.pts ?? 0);
+        entry[side] = {
+          pct: Number.isFinite(pct) ? Math.min(1, Math.max(0, pct / 100)) : 0,
+          pts: Number.isFinite(pts) ? pts : 0,
+        };
+      }
+      if (entry.a || entry.b) teams[f.id] = entry;
     }
-    state.live = {
-      week: state.week,
-      progress: Number.isFinite(p) ? Math.min(1, Math.max(0, p / 100)) : 0,
-      points,
-    };
-    await save();
+    state.live = { week: state.week, teams };
+    await save(store, state);
     return json(view(state));
   }
 
@@ -304,40 +373,31 @@ export default async (req) => {
     for (const f of state.schedule.fixtures) {
       const s = scores[f.id];
       if (!s || typeof s.a !== "number" || typeof s.b !== "number") continue;
-      // Empate fica com o lado A
-      state.results[state.week][f.id] = {
-        a: s.a,
-        b: s.b,
-        winner: s.a >= s.b ? "A" : "B",
-        aId: f.a,
-        bId: f.b,
-      };
+      state.results[state.week][f.id] = { a: s.a, b: s.b, winner: s.a >= s.b ? "A" : "B", aId: f.a, bId: f.b };
     }
-    const res = state.results[state.week];
-    for (const id of Object.keys(state.wallets)) {
-      let w = state.wallets[id];
-      for (let i = 0; i < w.history.length; i++) {
-        const h = w.history[i];
-        if (h.status !== "open" || h.week !== state.week) continue;
-        if (h.type === "bet") {
-          const r = res[h.fixtureId];
-          if (r) w = settleBet(w, i, legWon(h, r));
-        } else if (h.type === "multi") {
-          const outcomes = h.legs.map((leg) => (res[leg.fixtureId] ? legWon(leg, res[leg.fixtureId]) : null));
-          if (outcomes.includes(false)) w = settleMulti(w, i, false);
-          else if (outcomes.every((o) => o === true)) w = settleMulti(w, i, true);
-        }
-      }
-      state.wallets[id] = w;
+    settleWeek(state, state.week);
+    await save(store, state);
+    return json(view(state));
+  }
+
+  if (body.action === "resultadoAlterar") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    const scores = body.scores ?? {};
+    revertWeek(state, state.week);
+    for (const f of state.schedule.fixtures) {
+      const s = scores[f.id];
+      if (!s || !Number.isFinite(s.a) || !Number.isFinite(s.b)) continue;
+      state.results[state.week][f.id] = { a: s.a, b: s.b, winner: s.a >= s.b ? "A" : "B", aId: f.a, bId: f.b };
     }
-    await save();
+    settleWeek(state, state.week);
+    await save(store, state);
     return json(view(state));
   }
 
   if (body.action === "freeze") {
     if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
     state.frozen = state.frozen === state.week ? null : state.week;
-    await save();
+    await save(store, state);
     return json(view(state));
   }
 
@@ -346,9 +406,9 @@ export default async (req) => {
     const settled = Object.values(state.wallets).some((w) =>
       w.history.some((h) => h.week === state.week && (h.status === "won" || h.status === "lost"))
     );
-    if (settled) return json({ error: "Há apostas já liquidadas nesta rodada. Não é possível reabrir." }, 400);
+    if (settled) return json({ error: "Há apostas já liquidadas nesta rodada. Use Alterar resultado." }, 400);
     state.results[state.week] = {};
-    await save();
+    await save(store, state);
     return json(view(state));
   }
 
@@ -356,7 +416,36 @@ export default async (req) => {
     if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
     if (!state.auth[body.target]) return json({ error: "Este jogador ainda não tem PIN" }, 400);
     delete state.auth[body.target];
-    await save();
+    await save(store, state);
+    return json(view(state));
+  }
+
+  if (body.action === "ajuste") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    const w = state.wallets[body.target];
+    const delta = Number(body.delta);
+    const motivo = String(body.motivo ?? "").trim().slice(0, 80);
+    if (!w) return json({ error: "Jogador inválido" }, 400);
+    if (!Number.isInteger(delta) || delta === 0) return json({ error: "Informe um valor inteiro diferente de zero" }, 400);
+    if (!motivo) return json({ error: "Informe um motivo curto" }, 400);
+    w.balance += delta;
+    w.history.push({ type: "ajuste", delta, desc: `Ajuste do admin: ${motivo}`, week: state.week });
+    state.ajustes.push({ week: state.week, user: body.target, delta, motivo, em: Date.now() });
+    await save(store, state);
+    return json(view(state));
+  }
+
+  if (body.action === "cancelarAposta") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    const w = state.wallets[body.target];
+    const idx = Number(body.index);
+    const h = w?.history[idx];
+    if (!h || (h.type !== "bet" && h.type !== "multi") || h.status !== "open") {
+      return json({ error: "Aposta indisponível para cancelar" }, 400);
+    }
+    w.balance += h.stake;
+    w.history[idx] = { ...h, status: "cancelled" };
+    await save(store, state);
     return json(view(state));
   }
 
@@ -378,7 +467,7 @@ export default async (req) => {
       state.results[week][f.id] = { a: s.a, b: s.b, winner: s.a >= s.b ? "A" : "B", aId: f.a, bId: f.b };
     }
     settleWeek(state, week);
-    await save();
+    await save(store, state);
     return json(view(state));
   }
 
@@ -389,11 +478,9 @@ export default async (req) => {
   if (body.action === "emote") {
     const text = String(body.emote ?? "").trim();
     const graphemes = [...new Intl.Segmenter().segment(text)];
-    if (graphemes.length !== 1 || text.length > 16) {
-      return json({ error: "Escolha exatamente 1 emoji" }, 400);
-    }
+    if (graphemes.length !== 1 || text.length > 16) return json({ error: "Escolha exatamente 1 emoji" }, 400);
     state.emotes[body.user] = text;
-    await save();
+    await save(store, state);
     return json(view(state));
   }
 
@@ -436,7 +523,7 @@ export default async (req) => {
       apostas: [],
       criado: Date.now(),
     };
-    await save();
+    await save(store, state);
     return json(view(state));
   }
 
@@ -456,7 +543,7 @@ export default async (req) => {
       return json({ error: "Você não pode aceitar este desafio" }, 400);
     }
     if (d.aceites.desafiado && d.aceites.mediador) d.status = "ativo";
-    await save();
+    await save(store, state);
     return json(view(state));
   }
 
@@ -465,7 +552,7 @@ export default async (req) => {
     if (!d || d.status !== "pendente") return json({ error: "Desafio indisponível" }, 400);
     if (body.user !== d.desafiado && body.user !== d.mediador) return json({ error: "Você não pode recusar este desafio" }, 400);
     cancelDuel(state, d, "recusado");
-    await save();
+    await save(store, state);
     return json(view(state));
   }
 
@@ -473,7 +560,7 @@ export default async (req) => {
     const d = state.duels[body.duelId];
     if (!d || d.status !== "pendente" || body.user !== d.desafiante) return json({ error: "Desafio indisponível" }, 400);
     cancelDuel(state, d, "cancelado");
-    await save();
+    await save(store, state);
     return json(view(state));
   }
 
@@ -505,7 +592,7 @@ export default async (req) => {
       mov(state, u, -v, "Aposta em pool no 1x1", d.week);
       d.apostas.push({ user: u, side, modo, valor: v });
     }
-    await save();
+    await save(store, state);
     return json(view(state));
   }
 
@@ -529,7 +616,7 @@ export default async (req) => {
       const last = nw.history.length - 1;
       nw.history[last] = { ...nw.history[last], ...leg, week: state.week };
       state.wallets[body.user] = nw;
-      await save();
+      await save(store, state);
       return json(view(state));
     } catch (err) {
       return json({ error: err.message }, 400);
@@ -543,9 +630,7 @@ export default async (req) => {
       const items = Array.isArray(body.legs) ? body.legs : [];
       if (items.length < 2) throw new Error("A múltipla precisa de pelo menos 2 seleções");
       const ids = items.map((i) => i.fixtureId);
-      if (new Set(ids).size !== ids.length) {
-        throw new Error("Só é permitida uma seleção por confronto na múltipla");
-      }
+      if (new Set(ids).size !== ids.length) throw new Error("Só é permitida uma seleção por confronto na múltipla");
       const legs = items.map((i) => buildLeg(state, i));
       const odd = +legs.reduce((acc, l) => acc * l.odd, 1).toFixed(2);
       const w = state.wallets[body.user];
@@ -553,7 +638,7 @@ export default async (req) => {
       const last = nw.history.length - 1;
       nw.history[last] = { ...nw.history[last], type: "multi", legs, week: state.week };
       state.wallets[body.user] = nw;
-      await save();
+      await save(store, state);
       return json(view(state));
     } catch (err) {
       return json({ error: err.message }, 400);
