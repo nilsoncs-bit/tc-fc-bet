@@ -7,7 +7,16 @@ function admin() {
       <button class="btn" data-adminlogin>ENTRAR</button>
     </section>`;
   }
+  const frozen = state.frozen === state.week;
   return `
+  <h2 class="section">CONTROLES</h2>
+  <section class="card pad">
+    <p class="muted">Rodada ${state.week}: ${frozen ? "<b>apostas congeladas</b>" : "apostas abertas"}</p>
+    <button class="btn" data-freeze>${frozen ? "LIBERAR APOSTAS" : "CONGELAR APOSTAS"}</button>
+    <br><br>
+    <button class="btn" data-reopen>REABRIR CONFRONTOS DA RODADA</button>
+  </section>
+
   <h2 class="section">CONFRONTOS</h2>
   <section class="card pad">
     <div class="row"><select id="target">
@@ -35,6 +44,22 @@ Nome | Time | Projeção"></textarea>
         <input class="score" type="number" min="0" data-fid="${f.id}" data-side="b" value="${f.result?.b ?? ""}">
       </div>`).join("")}
     <button class="btn" data-save>SALVAR E LIQUIDAR</button>
+  </section>
+
+  <h2 class="section">RESETAR PIN</h2>
+  <section class="card pad">
+    <div class="row"><select id="resetSel">${state.players.map((p) => `<option value="${p.id}">${p.emote} ${p.name}</option>`).join("")}</select></div>
+    <button class="btn" data-reset-pin>RESETAR PIN</button>
+  </section>
+
+  <h2 class="section">LIQUIDAR RODADA ANTERIOR</h2>
+  <section class="card pad">
+    <div class="row"><input class="pw" id="prevWeek" placeholder="Ex.: 2026-W43"></div>
+    <textarea id="prevText" placeholder="Confrontos da rodada anterior, no mesmo formato do CONFRONTOS"></textarea>
+    <textarea id="prevScores" placeholder="Um placar por linha, na mesma ordem dos confrontos:
+118.5 96.4"></textarea>
+    <p class="muted">Use ponto no lugar da vírgula nos placares.</p>
+    <button class="btn" data-settle-prev>LIQUIDAR RODADA ANTERIOR</button>
   </section>`;
 }
 

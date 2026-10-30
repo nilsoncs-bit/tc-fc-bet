@@ -16,6 +16,7 @@ function mercados() {
     : "";
   return `
   <h2 class="section">MERCADOS DA SEMANA</h2>
+  ${state.frozen ? '<p class="muted"><b>Apostas congeladas</b> nesta rodada.</p>' : ""}
   ${prog}
   <section class="card">
     <div class="card-head"><b>VENCEDOR DO CONFRONTO</b><span>${state.fixtures.length} confrontos</span></div>

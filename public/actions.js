@@ -42,6 +42,36 @@ document.addEventListener("click", async (e) => {
     } else if (el.hasAttribute("data-adminlogin")) {
       adminPw = $("#pw").value;
       render();
+    } else if (el.hasAttribute("data-freeze")) {
+      state = await post({ action: "freeze", password: adminPw }, false);
+      alert(state.frozen ? "Apostas congeladas." : "Apostas liberadas.");
+      render();
+    } else if (el.hasAttribute("data-reopen")) {
+      if (!confirm("Reabrir os confrontos desta rodada? Os placares lançados nela serão apagados.")) return;
+      state = await post({ action: "reopen", password: adminPw }, false);
+      alert("Confrontos reabertos.");
+      render();
+    } else if (el.hasAttribute("data-reset-pin")) {
+      const target = $("#resetSel").value;
+      if (!confirm("Apagar o PIN deste jogador? Ele cria um novo no próximo acesso.")) return;
+      state = await post({ action: "resetPin", password: adminPw, target }, false);
+      alert("PIN apagado.");
+      render();
+    } else if (el.hasAttribute("data-settle-prev")) {
+      const week = $("#prevWeek").value.trim();
+      const text = $("#prevText").value;
+      const scores = {};
+      $("#prevScores").value
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .forEach((l, i) => {
+          const [a, b] = l.replace(/,/g, ".").split(/\s+/).map(Number);
+          scores[`f${i + 1}`] = { a, b };
+        });
+      state = await post({ action: "settlePrevious", password: adminPw, week, text, scores }, false);
+      alert("Rodada anterior liquidada.");
+      render();
     } else if (el.hasAttribute("data-schedule")) {
       state = await post({ action: "schedule", password: adminPw, target: $("#target").value, text: $("#sched").value }, false);
       alert("Confrontos salvos.");
