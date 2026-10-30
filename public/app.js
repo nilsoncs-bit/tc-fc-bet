@@ -9,6 +9,7 @@ let loginMsg = "";
 let filtroApostas = "todas";
 let recibo = null;
 let modalNov = null;
+let sheet = null;
 let primeiraCarga = true;
 
 const $ = (s) => document.querySelector(s);
@@ -114,7 +115,8 @@ function render() {
     (session && tab === "mercados" && slip.length ? slipView() : "") +
     tabbar() +
     (recibo ? reciboView() : "") +
-    (modalNov ? novidadesView() : "");
+    (modalNov ? novidadesView() : "") +
+    (sheet ? sheetView() : "");
 }
 
 let toqueX = null;

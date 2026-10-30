@@ -182,3 +182,18 @@ tr.corte td { border-top: 2px dashed var(--accent); }
 .lista-novidades { padding-left: 18px; line-height: 1.7; }
 .modal-nav { display: flex; justify-content: space-between; gap: 8px; margin-top: 16px; }
 .modal-nav .btn, .modal-nav .pill { flex: 1; }
+
+/* Navegação flutuante, acima do selo do Netlify */
+main { padding-bottom: 210px; }
+.tabbar {
+  left: 12px; right: 12px; bottom: 56px;
+  border-radius: 18px; border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+  padding-bottom: 0; overflow: hidden;
+}
+.slip { left: 12px; right: 12px; bottom: 140px; border-radius: 16px; border: 1px solid var(--line); }
+
+/* Ouro só nos pontos de 1x1 com espectadores */
+.btn-ouro { background: #C9A227; color: #0C0C0C; }
+.ouro-borda, .modal.ouro { border-color: #C9A227 !important; }
+.sub-h { font-size: 14px; color: var(--muted); margin: 12px 0 6px; }

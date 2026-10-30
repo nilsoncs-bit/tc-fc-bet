@@ -66,6 +66,43 @@ document.addEventListener("click", async (e) => {
       state = await post({ action: "emote", emote: $("#emote").value });
       alert("Emote salvo.");
       render();
+    } else if (el.dataset.duelAccept) {
+      state = await post({ action: "duelAccept", duelId: el.dataset.duelAccept });
+      alert("Desafio aceito.");
+      render();
+    } else if (el.dataset.duelRecusar) {
+      state = await post({ action: "duelRecusar", duelId: el.dataset.duelRecusar });
+      alert("Desafio recusado. Valor devolvido.");
+      render();
+    } else if (el.dataset.duelCancelar) {
+      state = await post({ action: "duelCancelar", duelId: el.dataset.duelCancelar });
+      alert("Desafio cancelado. Valor devolvido.");
+      render();
+    } else if (el.hasAttribute("data-duel-novo")) {
+      sheet = { tipo: "novo" };
+      render();
+    } else if (el.dataset.espec) {
+      sheet = { tipo: "espec", duelId: el.dataset.espec };
+      render();
+    } else if (el.hasAttribute("data-sheet-fechar")) {
+      sheet = null;
+      render();
+    } else if (el.hasAttribute("data-duel-enviar")) {
+      const modo = $("#dMod").value;
+      const body = { action: "duelCreate", desafiado: $("#dAdv").value, valor: Number($("#dVal").value), modo };
+      if (modo === "barra") {
+        body.mediador = $("#dMed").value;
+        if ($("#dBarra").value !== "") body.barra = Number($("#dBarra").value);
+      }
+      state = await post(body);
+      sheet = null;
+      alert("Desafio enviado.");
+      render();
+    } else if (el.hasAttribute("data-espec-enviar")) {
+      state = await post({ action: "duelApostar", duelId: el.dataset.duel, side: $("#eLado").value, modo: $("#eMod").value, valor: Number($("#eVal").value) });
+      sheet = null;
+      alert("Aposta de espectador registrada.");
+      render();
     } else if (el.hasAttribute("data-adminlogin")) {
       adminPw = $("#pw").value;
       render();

@@ -25,12 +25,14 @@ function mercados() {
   const prog = state.progress
     ? `<p class="muted">Rodada ${Math.round(state.progress * 100)}% concluída. Odds ajustadas ao vivo; apostas já feitas não mudam.</p>`
     : "";
+  const ativos = state.duels.filter((d) => d.status === "ativo");
   return `
   <div class="topo-mercados">
     <span class="chip-status ${state.frozen ? "fechado" : "aberto"}">${state.frozen ? "Congeladas" : "Apostas abertas"}</span>
     <span class="muted"> · ${state.week}</span>
   </div>
   ${aviso}${prog}
+  ${ativos.length ? `<h2 class="section">Duelos ativos</h2>${ativos.map(duelCard).join("")}` : ""}
   <h2 class="section">Vencedor do confronto</h2>
   <section class="card"><div class="grid">
     ${state.fixtures.map((f) => `
@@ -40,7 +42,8 @@ function mercados() {
   <h2 class="section">Pontos por equipe</h2>
   <section class="card"><div class="grid">
     ${state.fixtures.map((f) => ["a", "b"].map((t) => teamButtons(f, t)).join("")).join("")}
-  </div></section>`;
+  </div></section>
+  ${duelosSecao()}`;
 }
 
 function legOdd(l) {
@@ -138,6 +141,7 @@ function apostas() {
     <div class="row"><span>Lucro líquido</span><b class="${net >= 0 ? "pos" : "neg"}">${net >= 0 ? "+" : ""}${net} GC</b></div>
   </section>
   <div class="chips">${chips}</div>
+  ${duelosEncerrados()}
   ${filtradas.length ? filtradas.map(betCard).join("") : `<section class="card pad muted">Nenhuma aposta aqui ainda.</section>`}
   <h2 class="section">Bônus semanal</h2>
   <section class="card pad">
@@ -253,3 +257,105 @@ function novidadesView() {
     </div>
   </div>`;
 }
+
+function duelCard(d) {
+  const u = session?.user;
+  const pool = d.apostas.filter((x) => x.modo === "pool");
+  const poolA = pool.filter((x) => x.side === "A").reduce((s, x) => s + x.valor, 0);
+  const poolB = pool.filter((x) => x.side === "B").reduce((s, x) => s + x.valor, 0);
+  const linhaBarra = d.modo === "barra"
+    ? `<div class="muted">Barra: ${d.teamA} ${d.p}% · ${d.teamB} ${100 - d.p}% · odds ${odd(d.oddA)} / ${odd(d.oddB)}</div>`
+    : `<div class="muted">Odd 2,00</div>`;
+  const podeApostar = u && !state.frozen && me()?.balance >= 0 &&
+    !d.apostas.some((x) => x.user === u) && ![d.desafiante, d.desafiado, d.mediador].includes(u);
+  return `
+  <section class="card pad ${d.apostas.length ? "ouro-borda" : ""}">
+    <div class="row"><b>${d.emoteA} ${d.teamA}</b><span class="muted">x</span><b>${d.teamB} ${d.emoteB}</b></div>
+    <div class="muted">${d.nomeA} x ${d.nomeB}${d.nomeM ? ` · mediador ${d.nomeM}` : ""} · ${d.valor} GC cada</div>
+    ${linhaBarra}
+    <div class="muted">Espectadores: ${poolA} GC em ${d.teamA} · ${poolB} GC em ${d.teamB}</div>
+    ${podeApostar ? `<div class="row"><button class="btn btn-ouro" data-espec="${d.id}">APOSTAR COMO ESPECTADOR</button></div>` : ""}
+  </section>`;
+}
+
+function duelLinha(d, acao) {
+  return `
+  <section class="card pad">
+    <div><b>${d.emoteA} ${d.teamA}</b> x <b>${d.teamB} ${d.emoteB}</b></div>
+    <div class="muted">${d.valor} GC · ${d.modo === "barra" ? "com mediador" : "odd 2,00"}</div>
+    <div class="row">${acao}</div>
+  </section>`;
+}
+
+function duelosSecao() {
+  const u = session?.user;
+  if (!u) return "";
+  const recebidos = state.duels.filter((d) =>
+    d.status === "pendente" && ((d.desafiado === u && !d.aceites.desafiado) || (d.mediador === u && !d.aceites.mediador)));
+  const enviados = state.duels.filter((d) => d.desafiante === u && (d.status === "pendente" || d.status === "ativo"));
+  return `
+  <h2 class="section">1x1</h2>
+  ${!state.frozen ? `<button class="btn" style="width:100%" data-duel-novo>NOVO DESAFIO</button>` : ""}
+  ${recebidos.length ? `<h3 class="sub-h">Recebidos</h3>${recebidos.map((d) => duelLinha(d,
+      `<button class="btn" data-duel-accept="${d.id}">ACEITAR</button> <button class="pill" data-duel-recusar="${d.id}">RECUSAR</button>`)).join("")}` : ""}
+  ${enviados.length ? `<h3 class="sub-h">Enviados</h3>${enviados.map((d) => duelLinha(d,
+      d.status === "pendente" ? `<button class="pill" data-duel-cancelar="${d.id}">CANCELAR</button>` : `<span class="muted">Ativo</span>`)).join("")}` : ""}`;
+}
+
+function duelosEncerrados() {
+  const u = session?.user;
+  if (!u) return "";
+  const lista = state.duels.filter((d) =>
+    d.status !== "pendente" && d.status !== "ativo" &&
+    (d.desafiante === u || d.desafiado === u || d.mediador === u || d.apostas.some((x) => x.user === u)));
+  if (!lista.length) return "";
+  return `<h2 class="section">1x1 encerrados</h2>` + lista.slice().reverse().map((d) => {
+    const r = d.resultado;
+    const quem = !r ? d.status
+      : r.vencedor === "A" ? `Venceu ${d.teamA}`
+      : r.vencedor === "B" ? `Venceu ${d.teamB}`
+      : "Empate, valores devolvidos";
+    return `
+    <section class="card pad bet">
+      <div class="row"><b>${d.teamA} x ${d.teamB}</b><span class="badge ${d.status === "encerrado" ? "won" : "open"}">${d.status.toUpperCase()}</span></div>
+      <div class="muted">${d.valor} GC · ${d.modo === "barra" ? "com mediador" : "odd 2,00"}</div>
+      <div>${r ? `${r.a} x ${r.b} · ` : ""}${quem}</div>
+    </section>`;
+  }).join("");
+}
+
+function sheetView() {
+  if (sheet.tipo === "novo") {
+    const outros = state.players.filter((p) => p.id !== session?.user);
+    const opcoes = outros.map((p) => `<option value="${p.id}">${p.emote} ${p.name}</option>`).join("");
+    return `
+    <div class="modal-wrap"><div class="modal">
+      <h2>Novo desafio</h2>
+      <div class="row"><span>Adversário</span><select id="dAdv">${opcoes}</select></div>
+      <div class="row"><span>Valor (GC)</span><input id="dVal" type="number" min="1" step="1" value="50"></div>
+      <div class="row"><span>Modalidade</span><select id="dMod"><option value="odd2">Odd 2,00</option><option value="barra">Com mediador</option></select></div>
+      <div class="row"><span>Mediador</span><select id="dMed">${opcoes}</select></div>
+      <div class="row"><span>Barra (%)</span><input id="dBarra" type="number" min="20" max="80" placeholder="automática"></div>
+      <p class="muted">Mediador e barra valem só na modalidade com mediador. Sem barra, usa a sugestão da projeção.</p>
+      <div class="modal-nav"><button class="pill" data-sheet-fechar>Cancelar</button><button class="btn" data-duel-enviar>DESAFIAR</button></div>
+    </div></div>`;
+  }
+  const d = state.duels.find((x) => x.id === sheet.duelId);
+  if (!d) return "";
+  const modos = d.modo === "barra"
+    ? `<option value="barra">Com mediador (barra)</option><option value="pool">Pool</option>`
+    : `<option value="pool">Pool</option>`;
+  return `
+  <div class="modal-wrap"><div class="modal ouro">
+    <h2>Apostar como espectador</h2>
+    <p class="muted">${d.teamA} x ${d.teamB} · ${d.valor} GC por lado</p>
+    <div class="row"><span>Lado</span><select id="eLado"><option value="A">${d.teamA}</option><option value="B">${d.teamB}</option></select></div>
+    <div class="row"><span>Modo</span><select id="eMod">${modos}</select></div>
+    <div class="row"><span>Valor (GC)</span><input id="eVal" type="number" min="10" max="${d.valor}" step="1" value="10"></div>
+    <p class="muted">Mínimo 10 GC e máximo ${d.valor} GC. Só uma aposta por duelo. Apostas fecham no congelamento.</p>
+    <div class="modal-nav"><button class="pill" data-sheet-fechar>Cancelar</button><button class="btn btn-ouro" data-espec-enviar data-duel="${d.id}">APOSTAR</button></div>
+  </div></div>`;
+}
+
+// ouro e demais helpers ficam em style.css
+const bloqueado2 = bloqueado;
