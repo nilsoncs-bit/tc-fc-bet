@@ -10,6 +10,7 @@ let filtroApostas = "todas";
 let recibo = null;
 let modalNov = null;
 let sheet = null;
+let statsEscopo = "rodada";
 let primeiraCarga = true;
 
 const $ = (s) => document.querySelector(s);
@@ -93,7 +94,7 @@ const TABS = [
 ];
 
 function tabbar() {
-  const ativa = (k) => tab === k || (k === "mais" && (tab === "regras" || tab === "admin"));
+  const ativa = (k) => tab === k || (k === "mais" && (tab === "regras" || tab === "admin" || tab === "estatisticas"));
   return `
   <nav class="tabbar">
     ${TABS.map(([k, i, l]) => `<button class="tab ${ativa(k) ? "on" : ""}" data-tab="${k}"><span>${i}</span><small>${l}</small></button>`).join("")}
@@ -108,7 +109,7 @@ function render() {
   else if (tab === "mais") body = mais();
   else if (tab === "regras") body = regras();
   else if (!session && (tab === "mercados" || tab === "apostas")) body = loginView();
-  else body = { mercados, apostas, placar }[tab]();
+  else body = { mercados, apostas, placar, estatisticas }[tab]();
   $("#app").innerHTML =
     header() +
     `<main>${body}</main>` +

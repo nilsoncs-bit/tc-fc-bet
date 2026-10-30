@@ -1,28 +1,31 @@
 // Novidades mostradas ao abrir o app. Para uma nova versão, troque a versão e as páginas.
 const NOVIDADES = {
-  versao: "2026-10-29",
+  versao: "2026-10-30",
   paginas: [
     {
-      titulo: "Visual novo",
+      titulo: "1x1 entre jogadores",
       itens: [
-        "Paleta vermelha e preta, com o escudo do Top Caraio.",
-        "Navegação embaixo, com as abas sempre à mão.",
-        "Modo claro e escuro. Por padrão, segue o celular.",
+        "Desafie qualquer jogador da rodada, com o valor que quiser.",
+        "Odd 2,00: quem ganhar leva o total das duas apostas.",
+        "Com mediador: uma barra simples divide as chances. Toque no ⓘ para entender.",
+        "Espectadores podem apostar no duelo, em pool ou na barra.",
       ],
     },
     {
-      titulo: "Recibo de aposta",
+      titulo: "Estatísticas e admin",
       itens: [
-        "Ao apostar, o bilhete aparece como um recibo de papel.",
-        "Ele só fecha quando você toca em Fechar, para dar tempo de conferir.",
+        "Nova aba de estatísticas, na rodada atual ou na temporada.",
+        "Veja quanto foi apostado a favor e contra cada jogador, e quem aposta em quem.",
+        "Ajustes do admin aparecem no Placar, com o motivo.",
+        "O admin pode cancelar apostas em aberto e corrigir resultados já lançados.",
       ],
     },
     {
-      titulo: "Correções",
+      titulo: "Progresso por time",
       itens: [
-        "Congelamento de apostas pelo Admin, com aviso nos mercados.",
-        "Reset de PIN pelo Admin.",
-        "Liquidação da rodada anterior.",
+        "O admin informa, para cada time, quanto da projeção já foi jogada.",
+        "As odds se ajustam só para o time que avançou.",
+        "Apostas já feitas mantêm a odd do momento em que foram feitas.",
       ],
     },
   ],

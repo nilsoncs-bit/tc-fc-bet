@@ -197,3 +197,26 @@ main { padding-bottom: 210px; }
 .btn-ouro { background: #C9A227; color: #0C0C0C; }
 .ouro-borda, .modal.ouro { border-color: #C9A227 !important; }
 .sub-h { font-size: 14px; color: var(--muted); margin: 12px 0 6px; }
+
+/* Barra de abas: faixa inteira na parte de baixo, com a área preta abaixo dos botões */
+main { padding-bottom: 250px; }
+.tabbar {
+  left: 0; right: 0; bottom: 0;
+  border-radius: 0; border: 0; border-top: 1px solid var(--line);
+  box-shadow: none; background: var(--bg);
+  padding-bottom: 64px; overflow: visible;
+}
+.slip { left: 0; right: 0; bottom: 124px; border-radius: 16px 16px 0 0; }
+
+/* Barra simples do desafio */
+.barra-nomes { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin: 10px 0 6px; gap: 8px; }
+.barra-visual { display: flex; height: 16px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.barra-visual span:first-child { background: var(--accent); }
+.barra-visual span:last-child { background: var(--line); }
+#dBarra { width: 100%; margin: 8px 0; padding: 0; }
+.info-barra { margin-top: 8px; }
+.info-barra summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.info-barra p { font-size: 13px; line-height: 1.5; color: var(--muted); }
+
+/* Estatísticas e admin */
+.tabela-matriz td, .tabela-matriz th { padding: 6px 4px; font-size: 12px; }

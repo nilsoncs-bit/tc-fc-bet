@@ -81,6 +81,7 @@ function slipView() {
 
 function statusBadge(h) {
   if (h.status === "open") return `<span class="badge open">EM ABERTO</span>`;
+  if (h.status === "cancelled") return `<span class="badge open">CANCELADA</span>`;
   return h.status === "won" ? `<span class="badge won">GANHOU</span>` : `<span class="badge lost">PERDEU</span>`;
 }
 
@@ -99,6 +100,7 @@ function betCard(h) {
   let money;
   if (h.status === "open") money = `Retorno possível: <b>${Math.floor(h.stake * h.odd)} GC</b>`;
   else if (h.status === "won") money = `Recebeu: <b>${h.payout} GC</b>`;
+  else if (h.status === "cancelled") money = `Cancelada: <b>${h.stake} GC</b> devolvidos`;
   else money = `Perdeu: <b>${h.stake} GC</b>`;
   return `
   <section class="card bet">
@@ -185,7 +187,8 @@ function placar() {
   ${emoteForm}
   <section class="card"><table>
     <tr><th>#</th><th>Jogador</th><th class="num">GC</th></tr>${rows}
-  </table></section>`;
+  </table></section>
+  ${placarAjustes()}`;
 }
 
 function regras() {
@@ -209,6 +212,7 @@ function mais() {
   <h2 class="section">Mais</h2>
   <section class="card">
     <button class="item" data-tab="regras"><b>Regras</b><span>Como funcionam as apostas</span></button>
+    <button class="item" data-tab="estatisticas"><b>Estatísticas</b><span>Apostas, decepções e quem aposta em quem</span></button>
     <button class="item" data-novidades><b>Novidades</b><span>O que mudou no app</span></button>
     <button class="item" data-theme-toggle><b>Modo ${claro ? "escuro" : "claro"}</b><span>Troca a aparência do app</span></button>
     <button class="item" data-tab="admin"><b>Admin</b><span>Confrontos, resultados e controles</span></button>
@@ -324,19 +328,43 @@ function duelosEncerrados() {
   }).join("");
 }
 
+function barraSugerida(pA, pB) {
+  const x = (pA - pB) / (38 * Math.SQRT2);
+  const t = 1 / (1 + 0.2316419 * Math.abs(x));
+  const dd = 0.3989423 * Math.exp(-x * x / 2);
+  const q = dd * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  const cdf = x > 0 ? 1 - q : q;
+  return Math.min(80, Math.max(20, Math.round(cdf * 100)));
+}
+
 function sheetView() {
   if (sheet.tipo === "novo") {
     const outros = state.players.filter((p) => p.id !== session?.user);
+    const eu = me();
     const opcoes = outros.map((p) => `<option value="${p.id}">${p.emote} ${p.name}</option>`).join("");
+    const primeiro = outros[0];
+    const s = eu && primeiro ? barraSugerida(eu.projection, primeiro.projection) : 50;
     return `
     <div class="modal-wrap"><div class="modal">
       <h2>Novo desafio</h2>
       <div class="row"><span>Adversário</span><select id="dAdv">${opcoes}</select></div>
       <div class="row"><span>Valor (GC)</span><input id="dVal" type="number" min="1" step="1" value="50"></div>
       <div class="row"><span>Modalidade</span><select id="dMod"><option value="odd2">Odd 2,00</option><option value="barra">Com mediador</option></select></div>
-      <div class="row"><span>Mediador</span><select id="dMed">${opcoes}</select></div>
-      <div class="row"><span>Barra (%)</span><input id="dBarra" type="number" min="20" max="80" placeholder="automática"></div>
-      <p class="muted">Mediador e barra valem só na modalidade com mediador. Sem barra, usa a sugestão da projeção.</p>
+      <div id="linhaMed" class="row" style="display:none"><span>Mediador</span><select id="dMed">${opcoes}</select></div>
+      <div id="linhaBarra" style="display:none">
+        <div class="barra-nomes"><span>${eu?.name ?? "Você"}</span><span id="bNomeB">${primeiro?.name ?? ""}</span></div>
+        <div class="barra-visual"><span id="bA" style="width:${s}%"></span><span id="bB" style="width:${100 - s}%"></span></div>
+        <input id="dBarra" type="range" min="20" max="80" value="${s}">
+        <div class="muted" id="bOdds">Odd ${odd(100 / s)} · Odd ${odd(100 / (100 - s))}</div>
+        <details class="info-barra">
+          <summary>ⓘ O que é a barra?</summary>
+          <p>A barra divide 100% entre os dois lados. Quanto mais ela pende para um lado, menor a odd dele e maior a do outro.
+          No meio, as duas odds são 2,00. Com 60% para um lado, ele tem odd 1,67 e o outro, 2,50.
+          O mediador paga a diferença: ganha quando o favorito vence e paga quando o azarão vence.
+          A barra começa na sugestão da projeção, e você pode mudar. Adversário e mediador precisam aceitar a mesma barra.</p>
+        </details>
+      </div>
+      <p class="muted">Sem mediador, o duelo é odd 2,00 para os dois.</p>
       <div class="modal-nav"><button class="pill" data-sheet-fechar>Cancelar</button><button class="btn" data-duel-enviar>DESAFIAR</button></div>
     </div></div>`;
   }
@@ -359,3 +387,43 @@ function sheetView() {
 
 // ouro e demais helpers ficam em style.css
 const bloqueado2 = bloqueado;
+
+function placarAjustes() {
+  if (!state.ajustes || !state.ajustes.length) return "";
+  const nome = (id) => state.players.find((p) => p.id === id)?.name ?? id;
+  return `<h2 class="section">Ajustes do admin</h2>
+  <section class="card">${state.ajustes.map((a) =>
+    `<div class="leg"><span>${nome(a.user)}: ${a.delta > 0 ? "+" : ""}${a.delta} GC</span><span class="muted">${a.motivo}</span></div>`).join("")}</section>`;
+}
+
+function estatisticas() {
+  const d = state.estatisticas[statsEscopo];
+  const chips = [["rodada", "Rodada atual"], ["temporada", "Temporada"]]
+    .map(([k, l]) => `<button class="chip ${statsEscopo === k ? "on" : ""}" data-stat-escopo="${k}">${l}</button>`)
+    .join("");
+  const lista = d.jogadores.slice().sort((a, b) => b.favor - a.favor);
+  const cards = lista.map((p) => {
+    const jog = p.favorW + p.favorL;
+    return `
+    <section class="card pad">
+      <div class="row"><b>${p.emote} ${p.name}</b><span class="muted">${p.team}</span></div>
+      <div class="row"><span>A favor</span><b>${p.favor} GC</b></div>
+      <div class="row"><span>Contra</span><b>${p.contra} GC</b></div>
+      <div class="row"><span>Decepção (perdido a favor)</span><b class="neg">${p.decepcao} GC</b></div>
+      <div class="row"><span>Taxa de acerto (simples)</span><b>${jog ? Math.round((100 * p.favorW) / jog) + "%" : "—"}</b></div>
+    </section>`;
+  }).join("");
+  const cab = `<tr><th>De \u2193 / Para \u2192</th>${lista.map((p) => `<th class="num">${p.emote}</th>`).join("")}</tr>`;
+  const linhas = state.players.map((u) => {
+    const linha = d.matriz[u.id] ?? {};
+    return `<tr><td>${u.emote}</td>${lista.map((p) => `<td class="num">${linha[p.id] ? linha[p.id] : ""}</td>`).join("")}</tr>`;
+  }).join("");
+  return `
+  <h2 class="section">Estatísticas</h2>
+  <div class="chips">${chips}</div>
+  <p class="muted">Múltiplas contam o valor em cada seleção. A taxa de acerto considera só apostas simples.</p>
+  ${cards}
+  <h2 class="section">Quem aposta em quem</h2>
+  <section class="card" style="overflow-x:auto"><table class="tabela-matriz">${cab}${linhas}</table></section>
+  <p class="muted">Linhas: quem apostou. Colunas: em quem. Valores em GC, a favor do jogador da coluna. Os emotes identificam cada jogador nos cards acima.</p>`;
+}

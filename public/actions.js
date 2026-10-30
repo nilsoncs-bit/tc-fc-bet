@@ -9,6 +9,16 @@ function pickLeg(fixtureId, market, side, team) {
   slip.push({ fixtureId, market, side, team });
 }
 
+function atualizaBarra(s) {
+  const a = document.getElementById("bA");
+  const b = document.getElementById("bB");
+  const o = document.getElementById("bOdds");
+  if (!a || !b || !o) return;
+  a.style.width = s + "%";
+  b.style.width = 100 - s + "%";
+  o.textContent = `Odd ${odd(100 / s)} · Odd ${odd(100 / (100 - s))}`;
+}
+
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("button");
   if (!el) return;
@@ -45,6 +55,9 @@ document.addEventListener("click", async (e) => {
       render();
     } else if (el.dataset.filtro) {
       filtroApostas = el.dataset.filtro;
+      render();
+    } else if (el.dataset.statEscopo) {
+      statsEscopo = el.dataset.statEscopo;
       render();
     } else if (el.hasAttribute("data-theme-toggle")) {
       applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
@@ -92,7 +105,7 @@ document.addEventListener("click", async (e) => {
       const body = { action: "duelCreate", desafiado: $("#dAdv").value, valor: Number($("#dVal").value), modo };
       if (modo === "barra") {
         body.mediador = $("#dMed").value;
-        if ($("#dBarra").value !== "") body.barra = Number($("#dBarra").value);
+        body.barra = Number($("#dBarra").value);
       }
       state = await post(body);
       sheet = null;
@@ -121,6 +134,19 @@ document.addEventListener("click", async (e) => {
       state = await post({ action: "resetPin", password: adminPw, target }, false);
       alert("PIN apagado.");
       render();
+    } else if (el.hasAttribute("data-ajuste")) {
+      state = await post({
+        action: "ajuste", password: adminPw,
+        target: $("#ajUser").value, delta: Number($("#ajVal").value), motivo: $("#ajMotivo").value,
+      }, false);
+      alert("Ajuste aplicado.");
+      render();
+    } else if (el.dataset.cancelar) {
+      const [target, index] = el.dataset.cancelar.split("|");
+      if (!confirm("Cancelar esta aposta? O valor volta para o saldo do jogador.")) return;
+      state = await post({ action: "cancelarAposta", password: adminPw, target, index: Number(index) }, false);
+      alert("Aposta cancelada.");
+      render();
     } else if (el.hasAttribute("data-settle-prev")) {
       const week = $("#prevWeek").value.trim();
       const text = $("#prevText").value;
@@ -141,13 +167,16 @@ document.addEventListener("click", async (e) => {
       alert("Confrontos salvos.");
       render();
     } else if (el.hasAttribute("data-live-save")) {
-      const points = {};
+      const teams = {};
       document.querySelectorAll("input[data-live]").forEach((i) => {
+        if (i.value === "") return;
         const id = i.dataset.live;
-        points[id] ??= {};
-        if (i.value !== "") points[id][i.dataset.side] = Number(i.value);
+        const side = i.dataset.side;
+        teams[id] ??= {};
+        teams[id][side] ??= {};
+        teams[id][side][i.dataset.campo] = Number(i.value);
       });
-      state = await post({ action: "live", password: adminPw, progress: Number($("#prog").value), points }, false);
+      state = await post({ action: "live", password: adminPw, teams }, false);
       alert("Odds atualizadas.");
       render();
     } else if (el.hasAttribute("data-save")) {
@@ -157,7 +186,7 @@ document.addEventListener("click", async (e) => {
         scores[id] ??= {};
         if (i.value !== "") scores[id][i.dataset.side] = Number(i.value);
       });
-      state = await post({ action: "results", password: adminPw, scores }, false);
+      state = await post({ action: "resultadoAlterar", password: adminPw, scores }, false);
       alert("Resultados salvos e apostas liquidadas.");
       render();
     }
@@ -167,10 +196,34 @@ document.addEventListener("click", async (e) => {
 });
 
 document.addEventListener("input", (e) => {
-  if (e.target.id !== "stake") return;
-  stake = Math.max(0, Math.floor(Number(e.target.value) || 0));
-  const pot = document.getElementById("pot");
-  if (pot) pot.textContent = Math.floor(stake * totalOdd());
+  if (e.target.id === "stake") {
+    stake = Math.max(0, Math.floor(Number(e.target.value) || 0));
+    const pot = document.getElementById("pot");
+    if (pot) pot.textContent = Math.floor(stake * totalOdd());
+  }
+  if (e.target.id === "dBarra") atualizaBarra(Number(e.target.value));
+});
+
+document.addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.id === "dMod") {
+    const barra = t.value === "barra";
+    const med = document.getElementById("linhaMed");
+    const bar = document.getElementById("linhaBarra");
+    if (med) med.style.display = barra ? "" : "none";
+    if (bar) bar.style.display = barra ? "" : "none";
+  }
+  if (t.id === "dAdv") {
+    const eu = me();
+    const adv = state.players.find((p) => p.id === t.value);
+    if (!eu || !adv) return;
+    const s = barraSugerida(eu.projection, adv.projection);
+    const barra = document.getElementById("dBarra");
+    const nomeB = document.getElementById("bNomeB");
+    if (barra) barra.value = s;
+    if (nomeB) nomeB.textContent = adv.name;
+    atualizaBarra(s);
+  }
 });
 
 window.addEventListener("focus", load);
