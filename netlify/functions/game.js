@@ -1,5 +1,5 @@
 import { getStore } from "@netlify/blobs";
-import { placeBet, settleBet } from "./engine.js";
+import { placeBet, settleBet, winProbability } from "./engine.js";
 import { PLAYERS, FIXTURES, EMOTES } from "./data.js";
 import { json, weekNum, currentWeek, nextWeekId, ensureWallets } from "../lib/utils.js";
 import { parseSchedule } from "../lib/schedule.js";
@@ -15,6 +15,7 @@ async function loadState(store) {
   state.results ??= {};
   state.registry ??= {};
   state.emotes ??= {};
+  state.duels ??= {};
   state.results[state.week] ??= {};
   if (!state.live || state.live.week !== state.week) {
     state.live = { week: state.week, progress: 0, points: {} };
@@ -126,6 +127,13 @@ function view(state) {
       };
     }),
     standings: standingsView(state).map((r) => ({ ...r, emote: emoteOf(state, r.id) })),
+    duels: Object.values(state.duels).map((d) => ({
+      ...d,
+      nomeA: nomeOf(state, d.desafiante), nomeB: nomeOf(state, d.desafiado),
+      nomeM: d.mediador ? nomeOf(state, d.mediador) : null,
+      emoteA: emoteOf(state, d.desafiante), emoteB: emoteOf(state, d.desafiado),
+      teamA: teamOf(state, d.desafiante), teamB: teamOf(state, d.desafiado),
+    })),
   };
 }
 
@@ -149,10 +157,97 @@ function settleWeek(state, week) {
   }
 }
 
+const nomeOf = (state, id) => state.registry[id]?.name ?? id;
+const teamOf = (state, id) => state.registry[id]?.team ?? id;
+
+const ptsOf = (state, week, pid) => {
+  for (const r of Object.values(state.results[week] ?? {})) {
+    if (r.aId === pid) return r.a;
+    if (r.bId === pid) return r.b;
+  }
+  return null;
+};
+
+function mov(state, uid, delta, desc, week) {
+  const w = state.wallets[uid];
+  if (!w) return;
+  w.balance += delta;
+  w.history.push({ type: "duel", delta, desc, week });
+}
+
+function cancelDuel(state, d, status) {
+  if (d.status !== "pendente") return;
+  mov(state, d.desafiante, d.valor, "1x1 cancelado: valor devolvido", d.week);
+  if (d.aceites.desafiado) mov(state, d.desafiado, d.valor, "1x1 recusado: valor devolvido", d.week);
+  d.status = status;
+}
+
+function settleSpectators(state, d, ganhou) {
+  const empate = ganhou === "E";
+  for (const b of d.apostas.filter((x) => x.modo === "barra")) {
+    if (empate) {
+      mov(state, b.user, b.valor, "1x1 empatou: devolução", d.week);
+      mov(state, d.mediador, b.med, "1x1 empatou: devolução da mediação", d.week);
+    } else if (b.side === ganhou) {
+      mov(state, b.user, b.pot, "Aposta com mediador vencida", d.week);
+    } else {
+      mov(state, d.mediador, b.pot, "Mediação: aposta de espectador perdida", d.week);
+    }
+  }
+  const pool = d.apostas.filter((x) => x.modo === "pool");
+  if (empate) {
+    for (const b of pool) mov(state, b.user, b.valor, "1x1 empatou: devolução", d.week);
+    return;
+  }
+  const Pw = pool.filter((x) => x.side === ganhou).reduce((s, x) => s + x.valor, 0);
+  const Pl = pool.filter((x) => x.side !== ganhou).reduce((s, x) => s + x.valor, 0);
+  const m = Math.min(Pw, Pl);
+  for (const b of pool) {
+    if (b.side === ganhou) {
+      const extra = Pw ? Math.floor((b.valor * m) / Pw) : 0;
+      mov(state, b.user, b.valor + extra, "Pool vencido", d.week);
+    } else {
+      const back = Pl ? Math.floor((b.valor * (Pl - m)) / Pl) : 0;
+      mov(state, b.user, back, "Pool perdido: excedente devolvido", d.week);
+    }
+  }
+}
+
+function settleDuels(state) {
+  for (const d of Object.values(state.duels)) {
+    if (d.status !== "ativo") continue;
+    const pa = ptsOf(state, d.week, d.desafiante);
+    const pb = ptsOf(state, d.week, d.desafiado);
+    if (pa === null || pb === null) continue;
+    const v = d.valor;
+    const ganhou = pa > pb ? "A" : pb > pa ? "B" : "E";
+    if (ganhou === "E") {
+      mov(state, d.desafiante, v, "1x1 empatou: devolução", d.week);
+      mov(state, d.desafiado, v, "1x1 empatou: devolução", d.week);
+    } else {
+      const vencedor = ganhou === "A" ? d.desafiante : d.desafiado;
+      if (d.modo === "odd2") {
+        mov(state, vencedor, 2 * v, "1x1 vencido", d.week);
+      } else {
+        const odd = ganhou === "A" ? d.oddA : d.oddB;
+        const g = Math.floor(v * odd);
+        mov(state, vencedor, g, `1x1 vencido (odd ${odd})`, d.week);
+        mov(state, d.mediador, 2 * v - g, "Mediação do 1x1", d.week);
+      }
+    }
+    settleSpectators(state, d, ganhou);
+    d.status = "encerrado";
+    d.resultado = { a: pa, b: pb, vencedor: ganhou };
+  }
+}
+
 export default async (req) => {
   const store = getStore("tcfc");
   const state = await loadState(store);
-  const save = () => store.setJSON("state", state);
+  const save = () => {
+    settleDuels(state);
+    return store.setJSON("state", state);
+  };
 
   if (req.method === "GET") {
     // Leitura não grava: evita sobrescrever apostas feitas em paralelo
@@ -302,8 +397,121 @@ export default async (req) => {
     return json(view(state));
   }
 
+  if (body.action === "duelCreate") {
+    if (state.frozen === state.week) return json({ error: "Apostas congeladas nesta rodada" }, 400);
+    const u = body.user;
+    const dId = body.desafiado;
+    const mId = body.mediador || null;
+    const modo = body.modo === "barra" ? "barra" : "odd2";
+    const v = Number(body.valor);
+    const bal = state.wallets[u].balance;
+    if (!state.schedule.players.some((p) => p.id === u)) return json({ error: "Você não está na rodada atual" }, 400);
+    if (!state.schedule.players.some((p) => p.id === dId) || dId === u) return json({ error: "Escolha um adversário válido" }, 400);
+    if (!Number.isInteger(v) || v <= 0) return json({ error: "Valor inválido" }, 400);
+    if (bal < 0) return json({ error: "Saldo negativo: você não pode desafiar até zerar" }, 400);
+    if (v > bal) return json({ error: "Saldo insuficiente" }, 400);
+    let p = 50;
+    let oddA = 2;
+    let oddB = 2;
+    if (modo === "barra") {
+      if (!state.schedule.players.some((x) => x.id === mId) || mId === u || mId === dId) {
+        return json({ error: "Escolha um mediador que não esteja no duelo" }, 400);
+      }
+      const A = playerOf(state, u);
+      const B = playerOf(state, dId);
+      const sugerida = Math.round(winProbability(A.projection, B.projection) * 100);
+      const pb = Number(body.barra);
+      p = Math.min(80, Math.max(20, Number.isFinite(pb) ? Math.round(pb) : sugerida));
+      oddA = +(100 / p).toFixed(2);
+      oddB = +(100 / (100 - p)).toFixed(2);
+    }
+    mov(state, u, -v, `1x1 criado contra ${nomeOf(state, dId)}`, state.week);
+    const id = `d${Date.now().toString(36)}`;
+    state.duels[id] = {
+      id, week: state.week, desafiante: u, desafiado: dId,
+      mediador: modo === "barra" ? mId : null,
+      modo, valor: v, p, oddA, oddB,
+      status: "pendente",
+      aceites: { desafiado: false, mediador: modo === "odd2" },
+      apostas: [],
+      criado: Date.now(),
+    };
+    await save();
+    return json(view(state));
+  }
+
+  if (body.action === "duelAccept") {
+    if (state.frozen === state.week) return json({ error: "Apostas congeladas nesta rodada" }, 400);
+    const d = state.duels[body.duelId];
+    if (!d || d.status !== "pendente") return json({ error: "Desafio indisponível" }, 400);
+    if (body.user === d.desafiado && !d.aceites.desafiado) {
+      const bal = state.wallets[d.desafiado].balance;
+      if (bal < 0) return json({ error: "Saldo negativo: você não pode aceitar até zerar" }, 400);
+      if (bal < d.valor) return json({ error: "Saldo insuficiente para aceitar" }, 400);
+      mov(state, d.desafiado, -d.valor, `1x1 aceito contra ${nomeOf(state, d.desafiante)}`, d.week);
+      d.aceites.desafiado = true;
+    } else if (d.mediador && body.user === d.mediador && !d.aceites.mediador) {
+      d.aceites.mediador = true;
+    } else {
+      return json({ error: "Você não pode aceitar este desafio" }, 400);
+    }
+    if (d.aceites.desafiado && d.aceites.mediador) d.status = "ativo";
+    await save();
+    return json(view(state));
+  }
+
+  if (body.action === "duelRecusar") {
+    const d = state.duels[body.duelId];
+    if (!d || d.status !== "pendente") return json({ error: "Desafio indisponível" }, 400);
+    if (body.user !== d.desafiado && body.user !== d.mediador) return json({ error: "Você não pode recusar este desafio" }, 400);
+    cancelDuel(state, d, "recusado");
+    await save();
+    return json(view(state));
+  }
+
+  if (body.action === "duelCancelar") {
+    const d = state.duels[body.duelId];
+    if (!d || d.status !== "pendente" || body.user !== d.desafiante) return json({ error: "Desafio indisponível" }, 400);
+    cancelDuel(state, d, "cancelado");
+    await save();
+    return json(view(state));
+  }
+
+  if (body.action === "duelApostar") {
+    if (state.frozen === state.week) return json({ error: "Apostas congeladas nesta rodada" }, 400);
+    const d = state.duels[body.duelId];
+    if (!d || d.status !== "ativo") return json({ error: "Duelo não está ativo" }, 400);
+    const u = body.user;
+    if ([d.desafiante, d.desafiado, d.mediador].includes(u)) return json({ error: "Quem participa do duelo não pode apostar nele" }, 400);
+    if (d.apostas.some((x) => x.user === u)) return json({ error: "Você já apostou neste duelo" }, 400);
+    const bal = state.wallets[u].balance;
+    if (bal < 0) return json({ error: "Saldo negativo: você não pode apostar até zerar" }, 400);
+    const side = body.side === "B" ? "B" : "A";
+    const modo = body.modo === "barra" ? "barra" : "pool";
+    if (modo === "barra" && d.modo !== "barra") return json({ error: "Este duelo só aceita aposta em pool" }, 400);
+    const v = Number(body.valor);
+    if (!Number.isInteger(v) || v < 10 || v > d.valor) return json({ error: `Aposta de 10 a ${d.valor} GC` }, 400);
+    if (v > bal) return json({ error: "Saldo insuficiente" }, 400);
+    if (modo === "barra") {
+      const odd = side === "A" ? d.oddA : d.oddB;
+      const pot = Math.floor(v * odd);
+      const med = pot - v;
+      const exposicao = d.apostas.filter((x) => x.modo === "barra").reduce((s, x) => s + x.med, 0);
+      if (exposicao + med > d.valor) return json({ error: "Limite do mediador atingido neste duelo" }, 400);
+      mov(state, u, -v, "Aposta de espectador no 1x1", d.week);
+      mov(state, d.mediador, -med, "Contraparte de aposta de espectador", d.week);
+      d.apostas.push({ user: u, side, modo, valor: v, pot, med });
+    } else {
+      mov(state, u, -v, "Aposta em pool no 1x1", d.week);
+      d.apostas.push({ user: u, side, modo, valor: v });
+    }
+    await save();
+    return json(view(state));
+  }
+
   if (body.action === "bet") {
     if (state.frozen === state.week) return json({ error: "Apostas congeladas nesta rodada" }, 400);
+    if ((state.wallets[body.user]?.balance ?? 0) < 0) return json({ error: "Saldo negativo: você não pode apostar até zerar" }, 400);
     try {
       const leg = buildLeg(state, body);
       const w = state.wallets[body.user];
@@ -330,6 +538,7 @@ export default async (req) => {
 
   if (body.action === "multi") {
     if (state.frozen === state.week) return json({ error: "Apostas congeladas nesta rodada" }, 400);
+    if ((state.wallets[body.user]?.balance ?? 0) < 0) return json({ error: "Saldo negativo: você não pode apostar até zerar" }, 400);
     try {
       const items = Array.isArray(body.legs) ? body.legs : [];
       if (items.length < 2) throw new Error("A múltipla precisa de pelo menos 2 seleções");
