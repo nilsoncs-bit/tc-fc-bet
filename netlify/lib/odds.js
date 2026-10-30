@@ -6,23 +6,19 @@ export const UNDER_ODD = 2.1;
 // Linha da equipe: projeção arredondada para baixo + 0,5 (ex.: 115,6 -> 115,5; 121 -> 121,5)
 const lineOf = (proj) => Math.floor(proj) + 0.5;
 
-// Com pontos ao vivo, a média vira "pontos atuais + parte que falta da projeção" e a incerteza diminui.
-// Sem pontos, usa só a projeção da semana.
+// Progresso por time: pct = fração da projeção já jogada, pts = pontos atuais.
+// Média restante = pontos atuais + (1 - pct) x projeção. Incerteza diminui conforme o time avança.
 export function fixtureOdds(state, f, projA, projB) {
-  const progress = Math.min(1, Math.max(0, state.live?.progress ?? 0));
-  const remain = 1 - progress;
-  const pts = state.live?.points?.[f.id];
-  let mA = projA;
-  let mB = projB;
-  let sigma = DEFAULT_SIGMA;
-  if (pts) {
-    mA = pts.a + remain * projA;
-    mB = pts.b + remain * projB;
-    sigma = DEFAULT_SIGMA * Math.sqrt(Math.max(0.05, remain));
-  }
-  const ml = matchOdds(mA, mB, { sigma });
+  const live = state.live?.teams?.[f.id] ?? {};
+  const remA = live.a ? 1 - live.a.pct : 1;
+  const remB = live.b ? 1 - live.b.pct : 1;
+  const mA = live.a ? live.a.pts + remA * projA : projA;
+  const mB = live.b ? live.b.pts + remB * projB : projB;
+  const sigA = DEFAULT_SIGMA * Math.sqrt(Math.max(0.05, remA));
+  const sigB = DEFAULT_SIGMA * Math.sqrt(Math.max(0.05, remB));
+  const ml = matchOdds(mA, mB, { sigma: (sigA + sigB) / 2 });
 
-  const teamMarket = (proj, mean) => {
+  const teamMarket = (proj, mean, sigma) => {
     const line = lineOf(proj);
     const pOver = 1 - normalCdf((line - mean) / sigma);
     return { line, oddO: oddFromProbability(pOver), oddU: UNDER_ODD };
@@ -31,6 +27,6 @@ export function fixtureOdds(state, f, projA, projB) {
   return {
     oddA: ml.oddA,
     oddB: ml.oddB,
-    tot: { a: teamMarket(projA, mA), b: teamMarket(projB, mB) },
+    tot: { a: teamMarket(projA, mA, sigA), b: teamMarket(projB, mB, sigB) },
   };
 }
