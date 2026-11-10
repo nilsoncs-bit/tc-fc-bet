@@ -17,6 +17,7 @@ async function loadState(store) {
   state.registry ??= {};
   state.emotes ??= {};
   state.duels ??= {};
+  state.ajusteTabela ??= {};
   state.ajustes ??= [];
   state.results[state.week] ??= {};
   // Odds da rodada: zeradas na virada (50% para cada lado)
@@ -38,7 +39,7 @@ const emoteOf = (state, id) => state.emotes?.[id] ?? EMOTES[id] ?? "⚽";
 const playerOf = (state, id) => state.schedule.players.find((p) => p.id === id) ?? state.registry[id];
 const nomeOf = (state, id) => state.registry[id]?.name ?? id;
 const teamOf = (state, id) => state.registry[id]?.team ?? id;
-const oddsFor = (state, f) => oddsDaBarra(state.odds.valores[f.id] ?? 50);
+const oddsFor = (state, f) => oddsDaBarra(Math.min(P_MAX, Math.max(P_MIN, state.odds.valores[f.id] ?? 50)));
 const fixtureBloqueado = (state, fid) => state.frozen === state.week || state.congelados.fids.includes(fid);
 
 const legWon = (leg, r) => {
@@ -89,6 +90,7 @@ function buildLeg(state, item) {
   if (item.market === "hc") {
     if (item.side !== "A" && item.side !== "B") throw new Error("Lado inválido");
     const h = o.handicap;
+    if (!h) throw new Error("Sem handicap neste jogo: muito desequilibrado");
     const nome = item.side === "A" ? teamA : teamB;
     const linha = item.side === "A" ? h.linha : -h.linha;
     const txt = `${linha > 0 ? "+" : ""}${String(linha).replace(".", ",")}`;
@@ -309,8 +311,40 @@ function view(state) {
       teamB: teamOf(state, d.desafiado),
     })),
     ajustes: state.ajustes.slice(-30).reverse(),
+    auditoria: auditoriaView(state),
+    ajusteTabela: state.ajusteTabela,
     estatisticas: { rodada: statsView(state, "rodada"), temporada: statsView(state, "temporada") },
   };
+}
+
+function auditoriaView(state) {
+  const semanas = Object.keys(state.results)
+    .sort()
+    .filter((w) => Object.keys(state.results[w]).length)
+    .map((week) => ({
+      week,
+      jogos: Object.values(state.results[week]).map((r) => ({
+        a: teamOf(state, r.aId),
+        b: teamOf(state, r.bId),
+        pa: r.a,
+        pb: r.b,
+        vencedor: r.winner === "A" ? teamOf(state, r.aId) : teamOf(state, r.bId),
+      })),
+    }));
+  const faltando = state.schedule.fixtures
+    .filter((f) => !state.results[state.week][f.id])
+    .map((f) => `${teamOf(state, f.a)} x ${teamOf(state, f.b)}`);
+  const abertasAntigas = [];
+  for (const [uid, w] of Object.entries(state.wallets)) {
+    const porSemana = {};
+    for (const h of w.history) {
+      if ((h.type === "bet" || h.type === "multi") && h.status === "open" && h.week !== state.week) {
+        porSemana[h.week] = (porSemana[h.week] ?? 0) + 1;
+      }
+    }
+    for (const [week, n] of Object.entries(porSemana)) abertasAntigas.push({ nome: nomeOf(state, uid), week, n });
+  }
+  return { semanas, faltando, abertasAntigas };
 }
 
 const save = (store, state) => {
@@ -427,6 +461,21 @@ export default async (req) => {
     if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
     if (!state.auth[body.target]) return json({ error: "Este jogador ainda não tem PIN" }, 400);
     delete state.auth[body.target];
+    await save(store, state);
+    return json(view(state));
+  }
+
+  if (body.action === "ajusteTabela") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    if (!state.registry[body.target]) return json({ error: "Jogador inválido" }, 400);
+    const aj = {
+      w: Math.round(Number(body.w) || 0),
+      l: Math.round(Number(body.l) || 0),
+      pf: Number(body.pf) || 0,
+      pa: Number(body.pa) || 0,
+    };
+    if (aj.w === 0 && aj.l === 0 && aj.pf === 0 && aj.pa === 0) delete state.ajusteTabela[body.target];
+    else state.ajusteTabela[body.target] = aj;
     await save(store, state);
     return json(view(state));
   }
