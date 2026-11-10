@@ -31,8 +31,9 @@ function mercados() {
       <button class="odd ${isSel(f.id, "ml", "B")}" data-pick="${f.id}" data-market="ml" data-side="B" ${bloqueado(f)}><span>${f.bEmote} ${f.b}<br><small class="muted">${f.pB}% de chance</small></span><em>${odd(f.oddB)}</em></button>`).join("")}
   </div></section>
   <h2 class="section">Handicap</h2>
+  ${state.fixtures.some((f) => !f.handicap) ? '<p class="muted">Sem handicap nos jogos muito desequilibrados (linha acima de 15 pontos).</p>' : ""}
   <section class="card"><div class="grid">
-    ${state.fixtures.map((f) => `
+    ${state.fixtures.filter((f) => f.handicap).map((f) => `
       <button class="odd ${isSel(f.id, "hc", "A")}" data-pick="${f.id}" data-market="hc" data-side="A" ${bloqueado(f)}><span>${f.aEmote} ${f.a}<br><small class="muted">${sinal(f.handicap.linha)}</small></span><em>${odd(f.handicap.oddA)}</em></button>
       <button class="odd ${isSel(f.id, "hc", "B")}" data-pick="${f.id}" data-market="hc" data-side="B" ${bloqueado(f)}><span>${f.bEmote} ${f.b}<br><small class="muted">${sinal(-f.handicap.linha)}</small></span><em>${odd(f.handicap.oddB)}</em></button>`).join("")}
   </div></section>
@@ -149,7 +150,7 @@ function tabela() {
   const rows = state.standings.map((r, i) => `
     <tr class="${i === 5 ? "corte" : ""}">
       <td>${i + 1}</td>
-      <td>${r.emote} ${r.team}<div class="muted">${r.name}</div></td>
+      <td>${r.emote} ${r.team}${r.ajustado ? ' <span class="muted">· ajustado</span>' : ""}<div class="muted">${r.name}</div></td>
       <td class="num">${r.w}-${r.l}</td>
       <td class="num">${r.pct}</td>
       <td class="num">${num1(r.pf)}</td>
@@ -230,6 +231,7 @@ function reciboView() {
       <div class="rec-item grande"><span>Retorno possível</span><b>${r.retorno} GC</b></div>
       <div class="rec-linha"></div>
       <p class="rec-foot">${r.legs.length > 1 ? "Múltipla" : "Aposta simples"} · aposta registrada</p>
+      <button class="btn" style="width:100%;margin-bottom:8px" data-compartilhar>COMPARTILHAR</button>
       <button class="btn rec-fechar" data-recibo-fechar>FECHAR</button>
     </div>
   </div>`;
@@ -424,4 +426,70 @@ function estatisticas() {
 
 function splashView() {
   return `<div class="splash"><img src="escudo.png" alt=""><p>TOP CARAIO FC</p></div>`;
+}
+
+
+// Bilhete como imagem, para compartilhar
+function gerarBilhete(r) {
+  return new Promise((resolve) => {
+    const c = document.createElement("canvas");
+    c.width = 720;
+    c.height = 960;
+    const x = c.getContext("2d");
+    x.fillStyle = "#F4EBD0";
+    x.fillRect(0, 0, 720, 960);
+    x.fillStyle = "#2B2116";
+    x.font = "bold 40px 'Courier New', monospace";
+    x.fillText("BILHETE Nº " + String(r.num).padStart(4, "0"), 40, 90);
+    x.font = "26px 'Courier New', monospace";
+    x.fillText("Rodada " + r.week, 40, 130);
+    let y = 185;
+    x.fillText("-".repeat(32), 40, y);
+    y += 50;
+    for (const l of r.legs) {
+      x.fillText(String(l.label).slice(0, 26), 40, y);
+      x.fillText(odd(l.odd), 580, y);
+      y += 42;
+    }
+    y += 10;
+    x.fillText("-".repeat(32), 40, y);
+    y += 50;
+    x.fillText("Apostado", 40, y); x.fillText(r.stake + " GC", 500, y); y += 42;
+    x.fillText("Odd total", 40, y); x.fillText(odd(r.odd), 580, y); y += 42;
+    x.font = "bold 30px 'Courier New', monospace";
+    x.fillText("Retorno", 40, y); x.fillText(r.retorno + " GC", 480, y);
+    x.font = "22px 'Courier New', monospace";
+    x.fillText(r.legs.length > 1 ? "Múltipla" : "Aposta simples", 40, 900);
+    let feito = false;
+    const fim = () => {
+      if (feito) return;
+      feito = true;
+      c.toBlob((b) => resolve(b), "image/png");
+    };
+    const img = new Image();
+    img.onload = () => {
+      x.drawImage(img, 500, 780, 180, 180);
+      fim();
+    };
+    img.onerror = fim;
+    img.src = "escudo.png";
+  });
+}
+
+async function compartilharBilhete() {
+  if (!recibo) return;
+  const blob = await gerarBilhete(recibo);
+  const file = new File([blob], `bilhete-${recibo.num}.png`, { type: "image/png" });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: "Bilhete Top Caraio FC" });
+      return;
+    }
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = file.name;
+  a.click();
 }

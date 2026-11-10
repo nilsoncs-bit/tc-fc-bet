@@ -65,6 +65,9 @@ Nome | Time | Projeção"></textarea>
     ${apostasAbertas()}
   </section>
 
+  ${auditoriaSecao()}
+  ${ajusteTabelaSecao()}
+
   <h2 class="section">Resetar PIN</h2>
   <section class="card pad">
     <div class="row"><select id="resetSel">${opcoesJogadores}</select></div>
@@ -96,7 +99,8 @@ function oddsPrevia(pInt) {
   const lim = (x) => Math.min(20, Math.max(1.05, +x.toFixed(2)));
   const oddDe = (q) => lim(1 / (q * 1.05));
   const linha = Math.round(-(38 * Math.SQRT2 * invNormalFront(p)) - 0.5) + 0.5;
-  return { oddA: oddDe(p), oddB: oddDe(1 - p), linha };
+  const linhaTxt = Math.abs(linha) > 15 ? "sem handicap" : sinal(linha);
+  return { oddA: oddDe(p), oddB: oddDe(1 - p), linha, linhaTxt };
 }
 
 function oddsSecao() {
@@ -112,8 +116,8 @@ function oddsSecao() {
       <div class="odd-bloco">
         <div class="row"><b>${f.aEmote} ${f.a} x ${f.bEmote} ${f.b}</b></div>
         <div class="barra-nomes"><span>${f.a}</span><span>${f.b}</span></div>
-        <input type="range" min="5" max="95" value="${p}" data-odd="${f.id}">
-        <div class="muted" data-odd-txt="${f.id}">${p}% · odd ${odd(o.oddA)} · ${100 - p}% · odd ${odd(o.oddB)} · handicap ${sinal(o.linha)}</div>
+        <input type="range" min="35" max="65" value="${p}" data-odd="${f.id}">
+        <div class="muted" data-odd-txt="${f.id}">${p}% · odd ${odd(o.oddA)} · ${100 - p}% · odd ${odd(o.oddB)} · handicap ${o.linhaTxt}</div>
         <div class="row">
           <span class="muted">${f.result ? "encerrado" : travado ? "congelado" : "aberto"}</span>
           <button class="pill" data-congelar="${f.id}" data-valor="${travado ? "0" : "1"}">${travado ? "LIBERAR JOGO" : "CONGELAR JOGO"}</button>
@@ -135,4 +139,49 @@ function apostasAbertas() {
           <button class="pill" data-cancelar="${p.id}|${i}">CANCELAR</button>
         </div>`));
   return linhas.length ? linhas.join("") : `<p class="muted">Nenhuma aposta em aberto.</p>`;
+}
+
+
+function auditoriaSecao() {
+  const a = state.auditoria;
+  const faltando = a.faltando.length
+    ? a.faltando.map((f) => `<div class="leg"><span>${f}</span></div>`).join("")
+    : `<p class="muted">Todos os jogos da semana atual têm placar.</p>`;
+  const abertas = a.abertasAntigas.length
+    ? a.abertasAntigas.map((x) => `<div class="leg"><span>${x.nome}</span><span class="muted">${x.n} aposta(s) de ${x.week}</span></div>`).join("")
+    : `<p class="muted">Nenhuma aposta aberta de semanas anteriores.</p>`;
+  const semanas = a.semanas.length
+    ? a.semanas.map((s) => `
+        <div class="row"><b>${s.week}</b></div>
+        ${s.jogos.map((j) => `<div class="leg"><span>${j.a} ${j.pa} x ${j.pb} ${j.b}</span><span class="muted">venceu ${j.vencedor}</span></div>`).join("")}`).join("")
+    : `<p class="muted">Nenhuma semana lançada.</p>`;
+  return `
+  <h2 class="section">Auditoria</h2>
+  <section class="card pad">
+    <p class="muted">Confira os placares de cada semana. Esta tela só mostra, não altera nada.</p>
+    <b>Faltando na semana atual</b>
+    ${faltando}
+    <br><b>Apostas abertas de semanas anteriores</b>
+    ${abertas}
+    <br><b>Semanas lançadas</b>
+    ${semanas}
+  </section>`;
+}
+
+function ajusteTabelaSecao() {
+  const opcoes = state.players.map((p) => `<option value="${p.id}">${p.emote} ${p.name}</option>`).join("");
+  const ajustados = Object.entries(state.ajusteTabela || {}).map(([id, aj]) => {
+    const nome = state.players.find((p) => p.id === id)?.name ?? id;
+    return `<div class="leg"><span>${nome}</span><span class="muted">V ${aj.w} · D ${aj.l} · PF ${aj.pf} · PA ${aj.pa}</span></div>`;
+  }).join("");
+  return `
+  <h2 class="section">Ajuste da tabela</h2>
+  <section class="card pad">
+    <p class="muted">Soma V, D, PF e PA por cima do histórico. Não mexe em apostas nem em saldos. Aparece como "ajustado" para todos. Para zerar, aplique tudo em 0.</p>
+    <div class="row"><select id="atTime">${opcoes}</select></div>
+    <div class="row"><input id="atW" type="number" placeholder="V (+ ou -)"><input id="atL" type="number" placeholder="D (+ ou -)"></div>
+    <div class="row"><input id="atPF" type="number" step="0.1" placeholder="PF (+ ou -)"><input id="atPA" type="number" step="0.1" placeholder="PA (+ ou -)"></div>
+    <button class="btn" data-ajuste-tabela>APLICAR AJUSTE</button>
+    ${ajustados ? `<br><br><b>Ajustes ativos</b>${ajustados}` : ""}
+  </section>`;
 }

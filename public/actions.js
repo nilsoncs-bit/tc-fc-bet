@@ -32,6 +32,7 @@ document.addEventListener("click", async (e) => {
       logout();
     } else if (el.dataset.pick) {
       pickLeg(el.dataset.pick, el.dataset.market, el.dataset.side, el.dataset.team);
+      if (navigator.vibrate) navigator.vibrate(10);
       render();
     } else if (el.hasAttribute("data-clear")) {
       slip = [];
@@ -145,6 +146,15 @@ document.addEventListener("click", async (e) => {
       state = await post({ action: "resultadoAlterar", password: adminPw, scores }, false);
       alert("Placares aplicados e apostas liquidadas.");
       render();
+    } else if (el.hasAttribute("data-compartilhar")) {
+      await compartilharBilhete();
+    } else if (el.hasAttribute("data-ajuste-tabela")) {
+      state = await post({
+        action: "ajusteTabela", password: adminPw, target: $("#atTime").value,
+        w: $("#atW").value, l: $("#atL").value, pf: $("#atPF").value, pa: $("#atPA").value,
+      }, false);
+      alert("Ajuste da tabela aplicado.");
+      render();
     } else if (el.hasAttribute("data-ajuste")) {
       state = await post({
         action: "ajuste", password: adminPw,
@@ -216,7 +226,7 @@ document.addEventListener("input", (e) => {
     const p = Number(e.target.value);
     const o = oddsPrevia(p);
     const txt = document.querySelector(`[data-odd-txt="${fid}"]`);
-    if (txt) txt.textContent = `${p}% · odd ${odd(o.oddA)} · ${100 - p}% · odd ${odd(o.oddB)} · handicap ${sinal(o.linha)}`;
+    if (txt) txt.textContent = `${p}% · odd ${odd(o.oddA)} · ${100 - p}% · odd ${odd(o.oddB)} · handicap ${o.linhaTxt}`;
   }
 });
 

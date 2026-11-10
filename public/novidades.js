@@ -1,28 +1,27 @@
 // Novidades mostradas ao abrir o app. Para uma nova versão, troque a versão e as páginas.
 const NOVIDADES = {
-  versao: "2026-11-10",
+  versao: "2026-11-11",
   paginas: [
     {
-      titulo: "Odds pela barrinha",
+      titulo: "Handicap mais simples",
       itens: [
-        "Cada jogo tem uma barra de chance. A odd de cada lado aparece ao lado.",
-        "Sem projeção: a odd é só a chance que o admin escolhe.",
-        "Odds de 1,05 a 20.",
+        "A barra agora vai de 35% a 65%, com odds entre 1,47 e 2,72.",
+        "Se a linha do handicap passar de 15 pontos, o jogo fica sem handicap.",
       ],
     },
     {
-      titulo: "Handicap",
+      titulo: "Bilhete para compartilhar",
       itens: [
-        "O mercado de total saiu. No lugar, entrou o handicap.",
-        "A linha do handicap vem da barrinha: quem tem mais chance dá pontos ao outro.",
+        "Depois de apostar, toque em COMPARTILHAR para mandar o bilhete como foto.",
+        "Os botões agora respondem com um leve toque no Android.",
       ],
     },
     {
-      titulo: "Jogos congelados",
+      titulo: "Tabela e auditoria",
       itens: [
-        "O admin pode congelar um jogo por vez, ou todos de uma vez.",
-        "Um jogo congelado não recebe novas apostas. As apostas já feitas continuam.",
-        "Quando o placar sai, o jogo fecha e paga.",
+        "A % de playoffs usa os pontos feitos até agora.",
+        "O admin pode ajustar V, D, PF e PA de um time. Times ajustados aparecem marcados.",
+        "A nova Auditoria no Admin mostra os placares de cada semana.",
       ],
     },
   ],

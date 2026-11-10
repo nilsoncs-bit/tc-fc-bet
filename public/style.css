@@ -235,3 +235,7 @@ main { padding-bottom: 250px; }
 .splash img { width: 180px; }
 .splash p { font-weight: 800; letter-spacing: 2px; margin: 0; }
 @keyframes splashOut { to { opacity: 0; visibility: hidden; } }
+
+/* Pacote 11: resposta ao toque */
+.btn { transition: transform .08s; }
+.btn:active { transform: scale(.97); }
