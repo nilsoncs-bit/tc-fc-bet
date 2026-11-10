@@ -6,7 +6,10 @@ import { json, weekNum, currentWeek, nextWeekId, ensureWallets } from "../lib/ut
 import { parseSchedule } from "../lib/schedule.js";
 import { authPlayer } from "../lib/auth.js";
 import { standingsView } from "../lib/standings.js";
-import { oddsDaBarra, P_MIN, P_MAX } from "../lib/odds.js";
+import {
+  oddsDaBarra, pDaProjecao, linhaTotal, oddsTotal, chancesRodada, oddRodada,
+  P_MIN, P_MAX, ODD_MIN, ODD_MAX_RODADA,
+} from "../lib/odds.js";
 
 async function loadState(store) {
   const state = (await store.get("state", { type: "json" })) ?? {};
@@ -22,6 +25,11 @@ async function loadState(store) {
   state.results[state.week] ??= {};
   // Odds da rodada: zeradas na virada (50% para cada lado)
   if (!state.odds || state.odds.week !== state.week) state.odds = { week: state.week, valores: {} };
+  // Ajustes manuais, cada mercado separado: handicap (linha do time A), total (linha por time), melhor/pior (odd por time)
+  state.odds.handicap ??= {};
+  state.odds.total ??= {};
+  state.odds.melhor ??= {};
+  state.odds.pior ??= {};
   // Jogos congelados: zerados na virada
   if (!state.congelados || state.congelados.week !== state.week) state.congelados = { week: state.week, fids: [] };
   state.schedule ??= { week: state.week, players: PLAYERS, fixtures: FIXTURES };
@@ -39,7 +47,47 @@ const emoteOf = (state, id) => state.emotes?.[id] ?? EMOTES[id] ?? "⚽";
 const playerOf = (state, id) => state.schedule.players.find((p) => p.id === id) ?? state.registry[id];
 const nomeOf = (state, id) => state.registry[id]?.name ?? id;
 const teamOf = (state, id) => state.registry[id]?.team ?? id;
-const oddsFor = (state, f) => oddsDaBarra(Math.min(P_MAX, Math.max(P_MIN, state.odds.valores[f.id] ?? 50)));
+// Vitória: barra manual do admin, se houver; senão, a chance pela projeção
+const pAutoOf = (state, f) => pDaProjecao(playerOf(state, f.a)?.projection ?? 0, playerOf(state, f.b)?.projection ?? 0);
+const pOf = (state, f) => {
+  const manual = state.odds.valores[f.id];
+  return Number.isFinite(manual) ? Math.min(P_MAX, Math.max(P_MIN, manual)) : pAutoOf(state, f);
+};
+const oddsFor = (state, f) => oddsDaBarra(pOf(state, f), state.odds.handicap[f.id] ?? null);
+
+// Total por time: linha manual do admin, se houver; senão, a projeção inicial
+const totalOf = (state, pid) => {
+  const manual = state.odds.total[pid];
+  const auto = linhaTotal(playerOf(state, pid)?.projection ?? 0);
+  return { ...oddsTotal(Number.isFinite(manual) ? manual : auto), auto, manual: Number.isFinite(manual) };
+};
+
+// Melhor e pior da rodada: odd manual do admin, se houver; senão, pela simulação das projeções
+function rodadaOf(state) {
+  const ch = chancesRodada(state.schedule.players);
+  return state.schedule.players.map((p) => {
+    const autoM = oddRodada(ch[p.id].melhor);
+    const autoP = oddRodada(ch[p.id].pior);
+    const mM = state.odds.melhor[p.id];
+    const mP = state.odds.pior[p.id];
+    return {
+      id: p.id,
+      pMelhor: ch[p.id].melhor,
+      pPior: ch[p.id].pior,
+      autoMelhor: autoM,
+      autoPior: autoP,
+      manualMelhor: Number.isFinite(mM),
+      manualPior: Number.isFinite(mP),
+      oddMelhor: Number.isFinite(mM) ? mM : autoM,
+      oddPior: Number.isFinite(mP) ? mP : autoP,
+    };
+  });
+}
+const RODADA = ["mb", "mp"];
+const rodadaBloqueada = (state) =>
+  state.frozen === state.week ||
+  state.congelados.fids.length > 0 ||
+  Object.keys(state.results[state.week]).length > 0;
 const fixtureBloqueado = (state, fid) => state.frozen === state.week || state.congelados.fids.includes(fid);
 
 const legWon = (leg, r) => {
@@ -61,6 +109,8 @@ const legWon = (leg, r) => {
 
 // Quem é o alvo de cada perna (a favor e contra), usado nas estatísticas
 function alvosDaPerna(leg) {
+  if (leg.market === "mb") return { favor: leg.target };
+  if (leg.market === "mp") return { contra: leg.target };
   if ((leg.market ?? "ml") === "tot") {
     const alvo = leg.team === "a" ? leg.ta : leg.tb;
     return leg.side === "O" ? { favor: alvo } : { contra: alvo };
@@ -78,6 +128,22 @@ function settleMulti(wallet, index, won) {
 }
 
 function buildLeg(state, item) {
+  if (RODADA.includes(item.market)) {
+    if (rodadaBloqueada(state)) throw new Error("Melhor/pior da rodada fechado: a rodada já começou");
+    const alvo = state.schedule.players.find((p) => p.id === item.target);
+    if (!alvo) throw new Error("Time inválido");
+    const r = rodadaOf(state).find((x) => x.id === alvo.id);
+    const melhor = item.market === "mb";
+    return {
+      market: item.market,
+      target: alvo.id,
+      side: item.market,
+      odd: melhor ? r.oddMelhor : r.oddPior,
+      nJogos: state.schedule.fixtures.length,
+      match: melhor ? "Melhor da rodada" : "Pior da rodada",
+      pick: `${alvo.team} ${melhor ? "maior" : "menor"} pontuação`,
+    };
+  }
   const f = state.schedule.fixtures.find((x) => x.id === item.fixtureId);
   if (!f) throw new Error("Confronto não encontrado");
   if (state.results[state.week][f.id]) throw new Error("Confronto já encerrado");
@@ -104,6 +170,23 @@ function buildLeg(state, item) {
       pick: `${nome} ${txt}`,
     };
   }
+  if (item.market === "tot") {
+    if (item.team !== "a" && item.team !== "b") throw new Error("Time inválido");
+    if (item.side !== "O" && item.side !== "U") throw new Error("Lado inválido");
+    const t = totalOf(state, item.team === "a" ? f.a : f.b);
+    const nome = item.team === "a" ? teamA : teamB;
+    const linhaTxt = String(t.linha).replace(".", ",");
+    return {
+      ...base,
+      market: "tot",
+      team: item.team,
+      side: item.side,
+      line: t.linha,
+      odd: item.side === "O" ? t.over : t.under,
+      match,
+      pick: `${nome} ${item.side === "O" ? "mais de" : "menos de"} ${linhaTxt}`,
+    };
+  }
   if (item.side !== "A" && item.side !== "B") throw new Error("Lado inválido");
   return {
     ...base,
@@ -122,7 +205,16 @@ function settleWeek(state, week) {
     for (let i = 0; i < w.history.length; i++) {
       const h = w.history[i];
       if (h.status !== "open" || h.week !== week) continue;
-      if (h.type === "bet") {
+      if (h.type === "bet" && RODADA.includes(h.market)) {
+        const jogos = Object.values(res);
+        if (jogos.length < (h.nJogos ?? 1)) continue;
+        const pts = {};
+        for (const r of jogos) { pts[r.aId] = r.a; pts[r.bId] = r.b; }
+        if (!(h.target in pts)) continue;
+        const vals = Object.values(pts);
+        const alvo = h.market === "mb" ? Math.max(...vals) : Math.min(...vals);
+        w = settleBet(w, i, pts[h.target] === alvo);
+      } else if (h.type === "bet") {
         const r = res[h.fixtureId];
         if (r) w = settleBet(w, i, legWon(h, r));
       } else if (h.type === "multi") {
@@ -244,7 +336,7 @@ function statsView(state, escopo) {
       if (h.status !== "open" && h.status !== "won" && h.status !== "lost") continue;
       const legs = h.type === "multi" ? h.legs : [h];
       for (const leg of legs) {
-        if (!leg.ta || !leg.tb) continue;
+        if (!RODADA.includes(leg.market) && (!leg.ta || !leg.tb)) continue;
         const { favor, contra } = alvosDaPerna(leg);
         if (favor && row[favor]) {
           row[favor].favor += h.stake;
@@ -286,19 +378,27 @@ function view(state) {
       const o = oddsFor(state, f);
       return {
         id: f.id,
+        aId: f.a,
+        bId: f.b,
         a: A.team,
         b: B.team,
         aEmote: emoteOf(state, f.a),
         bEmote: emoteOf(state, f.b),
         pA: o.p,
         pB: 100 - o.p,
+        pAuto: pAutoOf(state, f),
+        pManual: Number.isFinite(state.odds.valores[f.id]),
         oddA: o.oddA,
         oddB: o.oddB,
         handicap: o.handicap,
+        handicapAuto: o.handicapAuto,
+        handicapManual: Number.isFinite(state.odds.handicap[f.id]),
+        totais: { a: totalOf(state, f.a), b: totalOf(state, f.b) },
         bloqueado: fixtureBloqueado(state, f.id),
         result: state.results[state.week][f.id] ?? null,
       };
     }),
+    rodada: { bloqueada: rodadaBloqueada(state), times: rodadaOf(state) },
     standings: standingsView(state).map((r) => ({ ...r, emote: emoteOf(state, r.id) })),
     duels: Object.values(state.duels).map((d) => ({
       ...d,
@@ -391,12 +491,25 @@ export default async (req) => {
 
   if (body.action === "odds") {
     if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
-    for (const [fid, v] of Object.entries(body.valores ?? {})) {
-      if (!state.schedule.fixtures.some((f) => f.id === fid)) continue;
-      const p = Math.round(Number(v));
-      if (!Number.isFinite(p)) continue;
-      state.odds.valores[fid] = Math.min(P_MAX, Math.max(P_MIN, p));
-    }
+    // Valor vazio ou null apaga o ajuste manual e volta para a projeção
+    const vazio = (v) => v === null || v === undefined || v === "";
+    const fids = new Set(state.schedule.fixtures.map((f) => f.id));
+    const pids = new Set(state.schedule.players.map((p) => p.id));
+    const aplica = (mapa, alvo, valido, conv) => {
+      for (const [k, v] of Object.entries(mapa ?? {})) {
+        if (!valido.has(k)) continue;
+        if (vazio(v)) { delete alvo[k]; continue; }
+        const x = conv(Number(String(v).replace(",", ".")));
+        if (x !== null) alvo[k] = x;
+      }
+    };
+    const meio = (x) => (Number.isFinite(x) ? Math.round(x - 0.5) + 0.5 : null);
+    aplica(body.valores, state.odds.valores, fids, (x) => (Number.isFinite(x) ? Math.min(P_MAX, Math.max(P_MIN, Math.round(x))) : null));
+    aplica(body.handicap, state.odds.handicap, fids, meio);
+    aplica(body.total, state.odds.total, pids, (x) => (Number.isFinite(x) && x > 0 ? meio(x) : null));
+    const oddOk = (x) => (Number.isFinite(x) ? Math.min(ODD_MAX_RODADA, Math.max(ODD_MIN, +x.toFixed(2))) : null);
+    aplica(body.melhor, state.odds.melhor, pids, oddOk);
+    aplica(body.pior, state.odds.pior, pids, oddOk);
     await save(store, state);
     return json(view(state));
   }
@@ -661,7 +774,13 @@ export default async (req) => {
     try {
       const leg = buildLeg(state, body);
       const w = state.wallets[body.user];
-      const dup = w.history.some(
+      if (RODADA.includes(leg.market)) {
+        const ja = w.history.some(
+          (h) => h.type === "bet" && h.week === state.week && h.market === leg.market && h.status !== "cancelled"
+        );
+        if (ja) return json({ error: `Você já apostou no ${leg.match.toLowerCase()} desta semana` }, 400);
+      }
+      const dup = !RODADA.includes(leg.market) && w.history.some(
         (h) =>
           h.type === "bet" &&
           h.status === "open" &&
@@ -688,6 +807,7 @@ export default async (req) => {
       const items = Array.isArray(body.legs) ? body.legs : [];
       if (items.length < 2) throw new Error("A múltipla precisa de pelo menos 2 seleções");
       const ids = items.map((i) => i.fixtureId);
+      if (items.some((i) => RODADA.includes(i.market))) throw new Error("Melhor/pior da rodada só vale em aposta simples");
       if (new Set(ids).size !== ids.length) throw new Error("Só é permitida uma seleção por confronto na múltipla");
       const legs = items.map((i) => buildLeg(state, i));
       const odd = +legs.reduce((acc, l) => acc * l.odd, 1).toFixed(2);
