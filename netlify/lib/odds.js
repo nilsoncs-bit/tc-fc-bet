@@ -1,32 +1,44 @@
-import { matchOdds, normalCdf, oddFromProbability, DEFAULT_SIGMA } from "../functions/engine.js";
+// Odds pela barrinha de probabilidade. Não usa projeção.
+export const MARGEM = 0.05;
+export const ODD_MIN = 1.05;
+export const ODD_MAX = 20;
+export const P_MIN = 5;
+export const P_MAX = 95;
 
-// Under de pontos por equipe sempre com odd fixa
-export const UNDER_ODD = 2.1;
+// Dispersão da diferença de pontos entre dois times (usada só para converter % em linha de handicap)
+const SIGMA_DIF = 38 * Math.SQRT2;
 
-// Linha da equipe: projeção arredondada para baixo + 0,5 (ex.: 115,6 -> 115,5; 121 -> 121,5)
-const lineOf = (proj) => Math.floor(proj) + 0.5;
+const limita = (x) => Math.min(ODD_MAX, Math.max(ODD_MIN, +x.toFixed(2)));
 
-// Progresso por time: pct = fração da projeção já jogada, pts = pontos atuais.
-// Média restante = pontos atuais + (1 - pct) x projeção. Incerteza diminui conforme o time avança.
-export function fixtureOdds(state, f, projA, projB) {
-  const live = state.live?.teams?.[f.id] ?? {};
-  const remA = live.a ? 1 - live.a.pct : 1;
-  const remB = live.b ? 1 - live.b.pct : 1;
-  const mA = live.a ? live.a.pts + remA * projA : projA;
-  const mB = live.b ? live.b.pts + remB * projB : projB;
-  const sigA = DEFAULT_SIGMA * Math.sqrt(Math.max(0.05, remA));
-  const sigB = DEFAULT_SIGMA * Math.sqrt(Math.max(0.05, remB));
-  const ml = matchOdds(mA, mB, { sigma: (sigA + sigB) / 2 });
+// Inversa da normal padrão (aproximação de Abramowitz e Stegun)
+function invNormal(p) {
+  const q = p < 0.5 ? p : 1 - p;
+  const t = Math.sqrt(-2 * Math.log(q));
+  const z = t - (2.515517 + 0.802853 * t + 0.010328 * t * t) /
+    (1 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t);
+  return p < 0.5 ? -z : z;
+}
 
-  const teamMarket = (proj, mean, sigma) => {
-    const line = lineOf(proj);
-    const pOver = 1 - normalCdf((line - mean) / sigma);
-    return { line, oddO: oddFromProbability(pOver), oddU: UNDER_ODD };
-  };
+export function oddDaProbabilidade(p) {
+  return limita(1 / (p * (1 + MARGEM)));
+}
 
+// Linha de handicap do time A, arredondada para .5 (nunca cai exatamente no número inteiro)
+export function linhaHandicap(p) {
+  const margemEsperada = SIGMA_DIF * invNormal(p);
+  return Math.round(-margemEsperada - 0.5) + 0.5;
+}
+
+export function oddsDaBarra(pInt) {
+  const p = pInt / 100;
   return {
-    oddA: ml.oddA,
-    oddB: ml.oddB,
-    tot: { a: teamMarket(projA, mA, sigA), b: teamMarket(projB, mB, sigB) },
+    p: pInt,
+    oddA: oddDaProbabilidade(p),
+    oddB: oddDaProbabilidade(1 - p),
+    handicap: {
+      linha: linhaHandicap(p),
+      oddA: oddDaProbabilidade(0.5),
+      oddB: oddDaProbabilidade(0.5),
+    },
   };
 }
