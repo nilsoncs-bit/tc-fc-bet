@@ -6,7 +6,7 @@ import { json, weekNum, currentWeek, nextWeekId, ensureWallets } from "../lib/ut
 import { parseSchedule } from "../lib/schedule.js";
 import { authPlayer } from "../lib/auth.js";
 import { standingsView } from "../lib/standings.js";
-import { fixtureOdds } from "../lib/odds.js";
+import { oddsDaBarra, P_MIN, P_MAX } from "../lib/odds.js";
 
 async function loadState(store) {
   const state = (await store.get("state", { type: "json" })) ?? {};
@@ -19,8 +19,10 @@ async function loadState(store) {
   state.duels ??= {};
   state.ajustes ??= [];
   state.results[state.week] ??= {};
-  if (!state.live || state.live.week !== state.week) state.live = { week: state.week, teams: {} };
-  state.live.teams ??= {};
+  // Odds da rodada: zeradas na virada (50% para cada lado)
+  if (!state.odds || state.odds.week !== state.week) state.odds = { week: state.week, valores: {} };
+  // Jogos congelados: zerados na virada
+  if (!state.congelados || state.congelados.week !== state.week) state.congelados = { week: state.week, fids: [] };
   state.schedule ??= { week: state.week, players: PLAYERS, fixtures: FIXTURES };
   if (state.pending && weekNum(state.pending.week) <= weekNum(state.week)) {
     state.schedule = state.pending;
@@ -36,11 +38,15 @@ const emoteOf = (state, id) => state.emotes?.[id] ?? EMOTES[id] ?? "⚽";
 const playerOf = (state, id) => state.schedule.players.find((p) => p.id === id) ?? state.registry[id];
 const nomeOf = (state, id) => state.registry[id]?.name ?? id;
 const teamOf = (state, id) => state.registry[id]?.team ?? id;
-const oddsFor = (state, f) =>
-  fixtureOdds(state, f, playerOf(state, f.a).projection, playerOf(state, f.b).projection);
+const oddsFor = (state, f) => oddsDaBarra(state.odds.valores[f.id] ?? 50);
+const fixtureBloqueado = (state, fid) => state.frozen === state.week || state.congelados.fids.includes(fid);
 
 const legWon = (leg, r) => {
   const market = leg.market ?? "ml";
+  if (market === "hc") {
+    const diff = leg.side === "A" ? r.a + leg.line - r.b : r.b - leg.line - r.a;
+    return diff > 0;
+  }
   if (market === "tot") {
     const pts = leg.team === "a" ? r.a : r.b;
     return leg.side === "O" ? pts > leg.line : pts < leg.line;
@@ -74,24 +80,26 @@ function buildLeg(state, item) {
   const f = state.schedule.fixtures.find((x) => x.id === item.fixtureId);
   if (!f) throw new Error("Confronto não encontrado");
   if (state.results[state.week][f.id]) throw new Error("Confronto já encerrado");
+  if (fixtureBloqueado(state, f.id)) throw new Error("Este jogo está congelado");
   const o = oddsFor(state, f);
   const base = { fixtureId: f.id, ta: f.a, tb: f.b };
   const teamA = teamOf(state, f.a);
   const teamB = teamOf(state, f.b);
-  if (item.market === "tot") {
-    if (item.team !== "a" && item.team !== "b") throw new Error("Equipe inválida");
-    if (item.side !== "O" && item.side !== "U") throw new Error("Lado inválido");
-    const t = o.tot[item.team];
-    const nome = item.team === "a" ? teamA : teamB;
+  const match = `${teamA} x ${teamB}`;
+  if (item.market === "hc") {
+    if (item.side !== "A" && item.side !== "B") throw new Error("Lado inválido");
+    const h = o.handicap;
+    const nome = item.side === "A" ? teamA : teamB;
+    const linha = item.side === "A" ? h.linha : -h.linha;
+    const txt = `${linha > 0 ? "+" : ""}${String(linha).replace(".", ",")}`;
     return {
       ...base,
-      market: "tot",
-      team: item.team,
+      market: "hc",
       side: item.side,
-      line: t.line,
-      odd: item.side === "O" ? t.oddO : t.oddU,
-      match: `${teamA} x ${teamB}`,
-      pick: `${nome}: ${item.side === "O" ? "mais" : "menos"} de ${t.line}`,
+      line: h.linha,
+      odd: item.side === "A" ? h.oddA : h.oddB,
+      match,
+      pick: `${nome} ${txt}`,
     };
   }
   if (item.side !== "A" && item.side !== "B") throw new Error("Lado inválido");
@@ -100,7 +108,7 @@ function buildLeg(state, item) {
     market: "ml",
     side: item.side,
     odd: item.side === "A" ? o.oddA : o.oddB,
-    match: `${teamA} x ${teamB}`,
+    match,
     pick: item.side === "A" ? teamA : teamB,
   };
 }
@@ -259,6 +267,8 @@ function view(state) {
     scheduleWeek: cfg.week,
     pendingWeek: state.pending?.week ?? null,
     frozen: state.frozen === state.week,
+    odds: state.odds.valores,
+    congelados: state.congelados.fids,
     players: cfg.players.map((p) => ({
       id: p.id,
       name: p.name,
@@ -278,11 +288,13 @@ function view(state) {
         b: B.team,
         aEmote: emoteOf(state, f.a),
         bEmote: emoteOf(state, f.b),
+        pA: o.p,
+        pB: 100 - o.p,
         oddA: o.oddA,
         oddB: o.oddB,
-        tot: o.tot,
+        handicap: o.handicap,
+        bloqueado: fixtureBloqueado(state, f.id),
         result: state.results[state.week][f.id] ?? null,
-        live: state.live.teams[f.id] ?? null,
       };
     }),
     standings: standingsView(state).map((r) => ({ ...r, emote: emoteOf(state, r.id) })),
@@ -343,26 +355,25 @@ export default async (req) => {
     return json(view(state));
   }
 
-  if (body.action === "live") {
+  if (body.action === "odds") {
     if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
-    const teams = {};
-    for (const f of state.schedule.fixtures) {
-      const t = body.teams?.[f.id];
-      if (!t) continue;
-      const entry = {};
-      for (const side of ["a", "b"]) {
-        const s = t[side];
-        if (!s || (s.pct == null && s.pts == null)) continue;
-        const pct = Number(s.pct ?? 0);
-        const pts = Number(s.pts ?? 0);
-        entry[side] = {
-          pct: Number.isFinite(pct) ? Math.min(1, Math.max(0, pct / 100)) : 0,
-          pts: Number.isFinite(pts) ? pts : 0,
-        };
-      }
-      if (entry.a || entry.b) teams[f.id] = entry;
+    for (const [fid, v] of Object.entries(body.valores ?? {})) {
+      if (!state.schedule.fixtures.some((f) => f.id === fid)) continue;
+      const p = Math.round(Number(v));
+      if (!Number.isFinite(p)) continue;
+      state.odds.valores[fid] = Math.min(P_MAX, Math.max(P_MIN, p));
     }
-    state.live = { week: state.week, teams };
+    await save(store, state);
+    return json(view(state));
+  }
+
+  if (body.action === "congelarJogo") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    if (!state.schedule.fixtures.some((f) => f.id === body.fid)) return json({ error: "Confronto não encontrado" }, 400);
+    const fids = new Set(state.congelados.fids);
+    if (body.valor) fids.add(body.fid);
+    else fids.delete(body.fid);
+    state.congelados.fids = [...fids];
     await save(store, state);
     return json(view(state));
   }
@@ -597,7 +608,6 @@ export default async (req) => {
   }
 
   if (body.action === "bet") {
-    if (state.frozen === state.week) return json({ error: "Apostas congeladas nesta rodada" }, 400);
     if ((state.wallets[body.user]?.balance ?? 0) < 0) return json({ error: "Saldo negativo: você não pode apostar até zerar" }, 400);
     try {
       const leg = buildLeg(state, body);
@@ -624,7 +634,6 @@ export default async (req) => {
   }
 
   if (body.action === "multi") {
-    if (state.frozen === state.week) return json({ error: "Apostas congeladas nesta rodada" }, 400);
     if ((state.wallets[body.user]?.balance ?? 0) < 0) return json({ error: "Saldo negativo: você não pode apostar até zerar" }, 400);
     try {
       const items = Array.isArray(body.legs) ? body.legs : [];
