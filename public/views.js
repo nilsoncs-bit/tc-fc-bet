@@ -37,20 +37,75 @@ function mercados() {
       <button class="odd ${isSel(f.id, "hc", "A")}" data-pick="${f.id}" data-market="hc" data-side="A" ${bloqueado(f)}><span>${f.aEmote} ${f.a}<br><small class="muted">${sinal(f.handicap.linha)}</small></span><em>${odd(f.handicap.oddA)}</em></button>
       <button class="odd ${isSel(f.id, "hc", "B")}" data-pick="${f.id}" data-market="hc" data-side="B" ${bloqueado(f)}><span>${f.bEmote} ${f.b}<br><small class="muted">${sinal(-f.handicap.linha)}</small></span><em>${odd(f.handicap.oddB)}</em></button>`).join("")}
   </div></section>
+  <h2 class="section">Pontos por equipe</h2>
+  <section class="card"><div class="grid">
+    ${state.fixtures.map((f) => ["a", "b"].map((t) => {
+      const tt = f.totais[t];
+      const nome = t === "a" ? `${f.aEmote} ${f.a}` : `${f.bEmote} ${f.b}`;
+      const linha = num1(tt.linha);
+      return `
+      <button class="odd ${isSel(f.id, "tot", "O", t)}" data-pick="${f.id}" data-market="tot" data-side="O" data-team="${t}" ${bloqueado(f)}><span>${nome}<br><small class="muted">mais de ${linha}</small></span><em>${odd(tt.over)}</em></button>
+      <button class="odd ${isSel(f.id, "tot", "U", t)}" data-pick="${f.id}" data-market="tot" data-side="U" data-team="${t}" ${bloqueado(f)}><span>${nome}<br><small class="muted">menos de ${linha}</small></span><em>${odd(tt.under)}</em></button>`;
+    }).join("")).join("")}
+  </div></section>
+  ${rodadaSecao("mb")}
+  ${rodadaSecao("mp")}
   ${duelosSecao()}`;
 }
 
+// Melhor (mb) e pior (mp) da rodada: só aposta simples, uma de cada por semana
+const jaApostouRodada = (market) =>
+  (me()?.history ?? []).some((h) => h.type === "bet" && h.week === state.week && h.market === market && h.status !== "cancelled");
+
+const timeDe = (id) => state.players.find((p) => p.id === id);
+
+function rodadaSecao(market) {
+  const melhor = market === "mb";
+  const campo = melhor ? "oddMelhor" : "oddPior";
+  const lista = state.rodada.times.slice().sort((x, y) => x[campo] - y[campo]);
+  const ja = jaApostouRodada(market);
+  const fechado = state.rodada.bloqueada || ja;
+  const aviso = state.rodada.bloqueada
+    ? '<p class="muted">Fechado: a rodada já começou.</p>'
+    : ja ? '<p class="muted">Você já fez sua aposta neste mercado nesta semana.</p>'
+    : '<p class="muted">Uma aposta por semana, só simples. Vale apostar em você mesmo.</p>';
+  return `
+  <h2 class="section">${melhor ? "Melhor da rodada" : "Pior da rodada"}</h2>
+  ${aviso}
+  <section class="card"><div class="grid">
+    ${lista.map((r) => {
+      const p = timeDe(r.id);
+      return `<button class="odd ${isSelRodada(market, r.id)}" data-pick="rodada" data-market="${market}" data-side="${market}" data-team="${r.id}" ${fechado ? "disabled" : ""}><span>${p.emote} ${p.team}<br><small class="muted">${p.name}</small></span><em>${odd(r[campo])}</em></button>`;
+    }).join("")}
+  </div></section>`;
+}
+
+const isSelRodada = (market, id) => (slip.some((l) => l.market === market && l.team === id) ? "sel" : "");
+
 function legOdd(l) {
+  if (l.market === "mb" || l.market === "mp") {
+    const r = state.rodada.times.find((x) => x.id === l.team);
+    return l.market === "mb" ? r.oddMelhor : r.oddPior;
+  }
   const f = fx(l.fixtureId);
+  if (l.market === "tot") return l.side === "O" ? f.totais[l.team].over : f.totais[l.team].under;
   if (l.market === "hc") return l.side === "A" ? f.handicap.oddA : f.handicap.oddB;
   return l.side === "A" ? f.oddA : f.oddB;
 }
 
 function legLabel(l) {
+  if (l.market === "mb" || l.market === "mp") {
+    const p = timeDe(l.team);
+    return `${p.emote} ${p.team} ${l.market === "mb" ? "melhor" : "pior"} da rodada`;
+  }
   const f = fx(l.fixtureId);
+  if (l.market === "tot") {
+    const nome = l.team === "a" ? `${f.aEmote} ${f.a}` : `${f.bEmote} ${f.b}`;
+    return `${nome} ${l.side === "O" ? "mais de" : "menos de"} ${num1(f.totais[l.team].linha)}`;
+  }
   if (l.market === "hc") {
     const nome = l.side === "A" ? `${f.aEmote} ${f.a}` : `${f.bEmote} ${f.b}`;
-    const linha = l.side === "A" ? l.line : -l.line;
+    const linha = l.side === "A" ? f.handicap.linha : -f.handicap.linha;
     return `${nome} ${sinal(linha)}`;
   }
   return l.side === "A" ? `${f.aEmote} ${f.a}` : `${f.bEmote} ${f.b}`;
@@ -191,9 +246,11 @@ function regras() {
   <h2 class="section">Regras</h2>
   <section class="card pad">
     Cada jogador começa com <b>1000 Game Coins</b> e recebe <b>100 GC por semana</b>.<br>
-    Escolha vencedor do confronto ou pontos por equipe (mais de / menos de a linha da equipe).<br>
-    A linha da equipe é a projeção arredondada para baixo, mais 0,5. O menos de tem odd fixa de 2,10.<br>
-    Múltipla: escolha 2 ou mais seleções, uma por confronto. A odd total é a multiplicação das odds. Se uma perna perder, a múltipla perde.<br>
+    Mercados: vencedor do confronto, handicap, pontos por equipe e melhor/pior da rodada.<br>
+    As odds saem da projeção de cada time. O admin pode ajustar cada mercado à mão, e o ajuste manual vale no lugar da projeção.<br>
+    Pontos por equipe: a linha é a projeção arredondada para baixo, mais 0,5. Odds fixas: mais de 1,73 e menos de 2,12.<br>
+    Melhor/pior da rodada: aposte em quem fará a maior ou a menor pontuação entre todos os times. Uma aposta de cada por semana, só simples, e vale apostar em você mesmo. Fecha quando a rodada começa. Em caso de empate, todos os empatados contam como vencedores.<br>
+    Múltipla: escolha 2 ou mais seleções, uma por confronto (melhor/pior da rodada não entra). A odd total é a multiplicação das odds. Se uma perna perder, a múltipla perde.<br>
     Quando o admin lança o placar final, as apostas são liquidadas.<br>
     Em caso de empate no placar, o lado A vence.<br>
     Game Coins são virtuais: não podem ser convertidos, trocados ou sacados por dinheiro.

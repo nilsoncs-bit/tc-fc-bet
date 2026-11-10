@@ -5,7 +5,12 @@ function pickLeg(fixtureId, market, side, team) {
     slip = slip.filter((l) => !key(l));
     return;
   }
-  slip = slip.filter((l) => l.fixtureId !== fixtureId);
+  // Melhor/pior da rodada é sempre aposta simples
+  if (market === "mb" || market === "mp") {
+    slip = [{ fixtureId: null, market, side, team }];
+    return;
+  }
+  slip = slip.filter((l) => l.fixtureId !== fixtureId && l.market !== "mb" && l.market !== "mp");
   slip.push({ fixtureId, market, side, team });
 }
 
@@ -42,7 +47,8 @@ document.addEventListener("click", async (e) => {
       const snapshot = slip.map((l) => ({ label: legLabel(l), odd: legOdd(l) }));
       const total = totalOdd();
       const apostado = stake;
-      const legs = slip.map(({ fixtureId, market, side, team }) => ({ fixtureId, market, side, team }));
+      const legs = slip.map(({ fixtureId, market, side, team }) =>
+        market === "mb" || market === "mp" ? { market, target: team } : { fixtureId, market, side, team });
       const semana = state.week;
       state = slip.length === 1
         ? await post({ action: "bet", ...legs[0], stake })
@@ -124,14 +130,27 @@ document.addEventListener("click", async (e) => {
       state = await post({ action: "freeze", password: adminPw }, false);
       alert(state.frozen ? "Todos os jogos congelados." : "Jogos liberados.");
       render();
+    } else if (el.dataset.barraProjecao) {
+      state = await post({ action: "odds", password: adminPw, valores: { [el.dataset.barraProjecao]: null } }, false);
+      render();
     } else if (el.dataset.congelar) {
       const valor = el.dataset.valor === "1";
       state = await post({ action: "congelarJogo", password: adminPw, fid: el.dataset.congelar, valor }, false);
       render();
     } else if (el.hasAttribute("data-odds-save")) {
+      // Só a barra que foi mexida vira ajuste manual; campos de texto vazios voltam para a projeção
       const valores = {};
-      document.querySelectorAll("input[data-odd]").forEach((i) => { valores[i.dataset.odd] = Number(i.value); });
-      state = await post({ action: "odds", password: adminPw, valores }, false);
+      document.querySelectorAll("input[data-odd]").forEach((i) => { if (i.dataset.mexeu) valores[i.dataset.odd] = Number(i.value); });
+      const campos = (attr) => {
+        const m = {};
+        document.querySelectorAll(`input[${attr}]`).forEach((i) => { m[i.getAttribute(attr)] = i.value.trim(); });
+        return m;
+      };
+      state = await post({
+        action: "odds", password: adminPw, valores,
+        handicap: campos("data-hc"), total: campos("data-tot"),
+        melhor: campos("data-mb"), pior: campos("data-mp"),
+      }, false);
       alert("Odds salvas.");
       render();
     } else if (el.hasAttribute("data-aplicar-placares")) {
@@ -223,6 +242,7 @@ document.addEventListener("input", (e) => {
   if (e.target.id === "dBarra") atualizaBarra(Number(e.target.value));
   if (e.target.dataset && e.target.dataset.odd) {
     const fid = e.target.dataset.odd;
+    e.target.dataset.mexeu = "1";
     const p = Number(e.target.value);
     const o = oddsPrevia(p);
     const txt = document.querySelector(`[data-odd-txt="${fid}"]`);

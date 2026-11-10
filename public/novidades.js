@@ -1,27 +1,27 @@
 // Novidades mostradas ao abrir o app. Para uma nova versão, troque a versão e as páginas.
 const NOVIDADES = {
-  versao: "2026-11-11",
+  versao: "2026-11-12",
   paginas: [
     {
-      titulo: "Handicap mais simples",
+      titulo: "Odds pela projeção",
       itens: [
-        "A barra agora vai de 35% a 65%, com odds entre 1,47 e 2,72.",
-        "Se a linha do handicap passar de 15 pontos, o jogo fica sem handicap.",
+        "Vitória e handicap voltam a sair da projeção de cada time.",
+        "O admin pode ajustar cada mercado à mão. O ajuste manual vale no lugar da projeção.",
       ],
     },
     {
-      titulo: "Bilhete para compartilhar",
+      titulo: "Pontos por equipe",
       itens: [
-        "Depois de apostar, toque em COMPARTILHAR para mandar o bilhete como foto.",
-        "Os botões agora respondem com um leve toque no Android.",
+        "Aposte se o time vai fazer mais ou menos que a linha.",
+        "A linha é a projeção arredondada para baixo, mais 0,5. Mais de paga 1,73 e menos de paga 2,12.",
       ],
     },
     {
-      titulo: "Tabela e auditoria",
+      titulo: "Melhor e pior da rodada",
       itens: [
-        "A % de playoffs usa os pontos feitos até agora.",
-        "O admin pode ajustar V, D, PF e PA de um time. Times ajustados aparecem marcados.",
-        "A nova Auditoria no Admin mostra os placares de cada semana.",
+        "Aposte em quem fará a maior ou a menor pontuação entre todos os times.",
+        "Uma aposta em cada por semana, só simples. Vale apostar em você mesmo.",
+        "Fecha quando a rodada começa.",
       ],
     },
   ],

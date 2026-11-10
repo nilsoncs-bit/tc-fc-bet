@@ -105,25 +105,52 @@ function oddsPrevia(pInt) {
 
 function oddsSecao() {
   const congelados = state.congelados || [];
-  return `
-  <section class="card pad">
-    <p class="muted">A barra é a chance do time da esquerda. A odd aparece enquanto você mexe. Apostas já feitas não mudam.</p>
-    ${state.fixtures.map((f) => {
-      const p = state.odds?.[f.id] ?? 50;
-      const o = oddsPrevia(p);
-      const travado = congelados.includes(f.id);
-      return `
+  const val = (manual, v) => (manual ? String(v).replace(".", ",") : "");
+  const jogos = state.fixtures.map((f) => {
+    const p = f.pA;
+    const o = oddsPrevia(p);
+    const travado = congelados.includes(f.id);
+    const ta = f.totais.a;
+    const tb = f.totais.b;
+    return `
       <div class="odd-bloco">
         <div class="row"><b>${f.aEmote} ${f.a} x ${f.bEmote} ${f.b}</b></div>
         <div class="barra-nomes"><span>${f.a}</span><span>${f.b}</span></div>
         <input type="range" min="35" max="65" value="${p}" data-odd="${f.id}">
         <div class="muted" data-odd-txt="${f.id}">${p}% · odd ${odd(o.oddA)} · ${100 - p}% · odd ${odd(o.oddB)} · handicap ${o.linhaTxt}</div>
         <div class="row">
+          <span class="muted">Vitória: ${f.pManual ? `<b>manual</b> (projeção ${f.pAuto}%)` : "pela projeção"}</span>
+          ${f.pManual ? `<button class="pill" data-barra-projecao="${f.id}">VOLTAR À PROJEÇÃO</button>` : ""}
+        </div>
+        <div class="row"><span class="muted">Handicap de ${f.a}</span>
+          <input class="score" data-hc="${f.id}" inputmode="decimal" placeholder="${f.handicapAuto === null ? "sem" : sinal(f.handicapAuto)}" value="${val(f.handicapManual, f.handicap?.linha)}"></div>
+        <div class="row"><span class="muted">Total ${f.a}</span>
+          <input class="score" data-tot="${f.aId}" inputmode="decimal" placeholder="${num1(ta.auto)}" value="${val(ta.manual, ta.linha)}"></div>
+        <div class="row"><span class="muted">Total ${f.b}</span>
+          <input class="score" data-tot="${f.bId}" inputmode="decimal" placeholder="${num1(tb.auto)}" value="${val(tb.manual, tb.linha)}"></div>
+        <div class="row">
           <span class="muted">${f.result ? "encerrado" : travado ? "congelado" : "aberto"}</span>
           <button class="pill" data-congelar="${f.id}" data-valor="${travado ? "0" : "1"}">${travado ? "LIBERAR JOGO" : "CONGELAR JOGO"}</button>
         </div>
       </div>`;
-    }).join("")}
+  }).join("");
+  const rodada = state.rodada.times.slice().sort((x, y) => x.oddMelhor - y.oddMelhor).map((r) => {
+    const p = state.players.find((x) => x.id === r.id);
+    return `
+      <div class="row"><span>${p.emote} ${p.team}</span>
+        <input class="score" data-mb="${r.id}" inputmode="decimal" placeholder="${odd(r.autoMelhor)}" value="${val(r.manualMelhor, r.oddMelhor)}">
+        <input class="score" data-mp="${r.id}" inputmode="decimal" placeholder="${odd(r.autoPior)}" value="${val(r.manualPior, r.oddPior)}">
+      </div>`;
+  }).join("");
+  return `
+  <section class="card pad">
+    <p class="muted">Tudo começa pela projeção. Mexer na barra, ou preencher um campo, vira ajuste manual só daquele mercado. Campo vazio volta para a projeção (o valor da projeção aparece apagado no campo). Apostas já feitas não mudam.</p>
+    ${jogos}
+    <div class="odd-bloco">
+      <div class="row"><b>Melhor / pior da rodada</b></div>
+      <p class="muted">Odds pela projeção com margem de 12,5% e teto de 301. Colunas: melhor · pior.</p>
+      ${rodada}
+    </div>
     <button class="btn" data-odds-save>SALVAR ODDS</button>
   </section>`;
 }
