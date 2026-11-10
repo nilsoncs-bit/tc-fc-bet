@@ -121,18 +121,29 @@ document.addEventListener("click", async (e) => {
       render();
     } else if (el.hasAttribute("data-freeze")) {
       state = await post({ action: "freeze", password: adminPw }, false);
-      alert(state.frozen ? "Apostas congeladas." : "Apostas liberadas.");
+      alert(state.frozen ? "Todos os jogos congelados." : "Jogos liberados.");
       render();
-    } else if (el.hasAttribute("data-reopen")) {
-      if (!confirm("Reabrir os confrontos desta rodada? Os placares lançados nela serão apagados.")) return;
-      state = await post({ action: "reopen", password: adminPw }, false);
-      alert("Confrontos reabertos.");
+    } else if (el.dataset.congelar) {
+      const valor = el.dataset.valor === "1";
+      state = await post({ action: "congelarJogo", password: adminPw, fid: el.dataset.congelar, valor }, false);
       render();
-    } else if (el.hasAttribute("data-reset-pin")) {
-      const target = $("#resetSel").value;
-      if (!confirm("Apagar o PIN deste jogador? Ele cria um novo no próximo acesso.")) return;
-      state = await post({ action: "resetPin", password: adminPw, target }, false);
-      alert("PIN apagado.");
+    } else if (el.hasAttribute("data-odds-save")) {
+      const valores = {};
+      document.querySelectorAll("input[data-odd]").forEach((i) => { valores[i.dataset.odd] = Number(i.value); });
+      state = await post({ action: "odds", password: adminPw, valores }, false);
+      alert("Odds salvas.");
+      render();
+    } else if (el.hasAttribute("data-aplicar-placares")) {
+      const linhas = $("#placaresTexto").value.split("\n").map((l) => l.trim()).filter(Boolean);
+      const scores = {};
+      linhas.forEach((l, i) => {
+        const nums = l.replace(/,/g, ".").split(/\s+/).map(Number);
+        if (nums.length >= 2 && nums.every(Number.isFinite)) scores[`f${i + 1}`] = { a: nums[0], b: nums[1] };
+      });
+      if (!Object.keys(scores).length) throw new Error("Nenhum placar válido. Use o formato: 146.7 94.6");
+      if (linhas.length !== state.fixtures.length && !confirm(`Você colou ${linhas.length} linhas e a rodada tem ${state.fixtures.length} jogos. Aplicar mesmo assim?`)) return;
+      state = await post({ action: "resultadoAlterar", password: adminPw, scores }, false);
+      alert("Placares aplicados e apostas liquidadas.");
       render();
     } else if (el.hasAttribute("data-ajuste")) {
       state = await post({
@@ -146,6 +157,17 @@ document.addEventListener("click", async (e) => {
       if (!confirm("Cancelar esta aposta? O valor volta para o saldo do jogador.")) return;
       state = await post({ action: "cancelarAposta", password: adminPw, target, index: Number(index) }, false);
       alert("Aposta cancelada.");
+      render();
+    } else if (el.hasAttribute("data-reopen")) {
+      if (!confirm("Reabrir os confrontos desta rodada? Os placares lançados nela serão apagados.")) return;
+      state = await post({ action: "reopen", password: adminPw }, false);
+      alert("Confrontos reabertos.");
+      render();
+    } else if (el.hasAttribute("data-reset-pin")) {
+      const target = $("#resetSel").value;
+      if (!confirm("Apagar o PIN deste jogador? Ele cria um novo no próximo acesso.")) return;
+      state = await post({ action: "resetPin", password: adminPw, target }, false);
+      alert("PIN apagado.");
       render();
     } else if (el.hasAttribute("data-settle-prev")) {
       const week = $("#prevWeek").value.trim();
@@ -165,19 +187,6 @@ document.addEventListener("click", async (e) => {
     } else if (el.hasAttribute("data-schedule")) {
       state = await post({ action: "schedule", password: adminPw, target: $("#target").value, text: $("#sched").value }, false);
       alert("Confrontos salvos.");
-      render();
-    } else if (el.hasAttribute("data-live-save")) {
-      const teams = {};
-      document.querySelectorAll("input[data-live]").forEach((i) => {
-        if (i.value === "") return;
-        const id = i.dataset.live;
-        const side = i.dataset.side;
-        teams[id] ??= {};
-        teams[id][side] ??= {};
-        teams[id][side][i.dataset.campo] = Number(i.value);
-      });
-      state = await post({ action: "live", password: adminPw, teams }, false);
-      alert("Odds atualizadas.");
       render();
     } else if (el.hasAttribute("data-save")) {
       const scores = {};
@@ -202,6 +211,13 @@ document.addEventListener("input", (e) => {
     if (pot) pot.textContent = Math.floor(stake * totalOdd());
   }
   if (e.target.id === "dBarra") atualizaBarra(Number(e.target.value));
+  if (e.target.dataset && e.target.dataset.odd) {
+    const fid = e.target.dataset.odd;
+    const p = Number(e.target.value);
+    const o = oddsPrevia(p);
+    const txt = document.querySelector(`[data-odd-txt="${fid}"]`);
+    if (txt) txt.textContent = `${p}% · odd ${odd(o.oddA)} · ${100 - p}% · odd ${odd(o.oddB)} · handicap ${sinal(o.linha)}`;
+  }
 });
 
 document.addEventListener("change", (e) => {
@@ -228,4 +244,5 @@ document.addEventListener("change", (e) => {
 
 window.addEventListener("focus", load);
 initTheme();
+setTimeout(() => { splash = false; render(); }, 1600);
 load();

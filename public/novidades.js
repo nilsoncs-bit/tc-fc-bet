@@ -1,31 +1,28 @@
 // Novidades mostradas ao abrir o app. Para uma nova versão, troque a versão e as páginas.
 const NOVIDADES = {
-  versao: "2026-10-30",
+  versao: "2026-11-10",
   paginas: [
     {
-      titulo: "1x1 entre jogadores",
+      titulo: "Odds pela barrinha",
       itens: [
-        "Desafie qualquer jogador da rodada, com o valor que quiser.",
-        "Odd 2,00: quem ganhar leva o total das duas apostas.",
-        "Com mediador: uma barra simples divide as chances. Toque no ⓘ para entender.",
-        "Espectadores podem apostar no duelo, em pool ou na barra.",
+        "Cada jogo tem uma barra de chance. A odd de cada lado aparece ao lado.",
+        "Sem projeção: a odd é só a chance que o admin escolhe.",
+        "Odds de 1,05 a 20.",
       ],
     },
     {
-      titulo: "Estatísticas e admin",
+      titulo: "Handicap",
       itens: [
-        "Nova aba de estatísticas, na rodada atual ou na temporada.",
-        "Veja quanto foi apostado a favor e contra cada jogador, e quem aposta em quem.",
-        "Ajustes do admin aparecem no Placar, com o motivo.",
-        "O admin pode cancelar apostas em aberto e corrigir resultados já lançados.",
+        "O mercado de total saiu. No lugar, entrou o handicap.",
+        "A linha do handicap vem da barrinha: quem tem mais chance dá pontos ao outro.",
       ],
     },
     {
-      titulo: "Progresso por time",
+      titulo: "Jogos congelados",
       itens: [
-        "O admin informa, para cada time, quanto da projeção já foi jogada.",
-        "As odds se ajustam só para o time que avançou.",
-        "Apostas já feitas mantêm a odd do momento em que foram feitas.",
+        "O admin pode congelar um jogo por vez, ou todos de uma vez.",
+        "Um jogo congelado não recebe novas apostas. As apostas já feitas continuam.",
+        "Quando o placar sai, o jogo fecha e paga.",
       ],
     },
   ],

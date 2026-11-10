@@ -10,53 +10,47 @@ function loginView() {
   </section>`;
 }
 
-const bloqueado = (f) => (f.result || state.frozen ? "disabled" : "");
+const bloqueado = (f) => (f.result || f.bloqueado ? "disabled" : "");
 
-function teamButtons(f, t) {
-  const m = f.tot[t];
-  const name = t === "a" ? `${f.aEmote} ${f.a}` : `${f.bEmote} ${f.b}`;
-  return `
-  <button class="odd ${isSel(f.id, "tot", "O", t)}" data-pick="${f.id}" data-market="tot" data-team="${t}" data-side="O" ${bloqueado(f)}><span>${name}<br><small class="muted">Mais de ${num1(m.line)}</small></span><em>${odd(m.oddO)}</em></button>
-  <button class="odd ${isSel(f.id, "tot", "U", t)}" data-pick="${f.id}" data-market="tot" data-team="${t}" data-side="U" ${bloqueado(f)}><span>${name}<br><small class="muted">Menos de ${num1(m.line)}</small></span><em>${odd(m.oddU)}</em></button>`;
-}
+const sinal = (x) => (x > 0 ? "+" : "") + num1(x);
 
 function mercados() {
   const aviso = state.frozen ? `<p class="aviso">Apostas congeladas nesta rodada.</p>` : "";
-  const prog = state.progress
-    ? `<p class="muted">Rodada ${Math.round(state.progress * 100)}% concluída. Odds ajustadas ao vivo; apostas já feitas não mudam.</p>`
-    : "";
   const ativos = state.duels.filter((d) => d.status === "ativo");
   return `
   <div class="topo-mercados">
     <span class="chip-status ${state.frozen ? "fechado" : "aberto"}">${state.frozen ? "Congeladas" : "Apostas abertas"}</span>
     <span class="muted"> · ${state.week}</span>
   </div>
-  ${aviso}${prog}
+  ${aviso}
   ${ativos.length ? `<h2 class="section">Duelos ativos</h2>${ativos.map(duelCard).join("")}` : ""}
-  <h2 class="section">Vencedor do confronto</h2>
+  <h2 class="section">Vencedor</h2>
   <section class="card"><div class="grid">
     ${state.fixtures.map((f) => `
-      <button class="odd ${isSel(f.id, "ml", "A")}" data-pick="${f.id}" data-market="ml" data-side="A" ${bloqueado(f)}><span>${f.aEmote} ${f.a}</span><em>${odd(f.oddA)}</em></button>
-      <button class="odd ${isSel(f.id, "ml", "B")}" data-pick="${f.id}" data-market="ml" data-side="B" ${bloqueado(f)}><span>${f.bEmote} ${f.b}</span><em>${odd(f.oddB)}</em></button>`).join("")}
+      <button class="odd ${isSel(f.id, "ml", "A")}" data-pick="${f.id}" data-market="ml" data-side="A" ${bloqueado(f)}><span>${f.aEmote} ${f.a}<br><small class="muted">${f.pA}% de chance</small></span><em>${odd(f.oddA)}</em></button>
+      <button class="odd ${isSel(f.id, "ml", "B")}" data-pick="${f.id}" data-market="ml" data-side="B" ${bloqueado(f)}><span>${f.bEmote} ${f.b}<br><small class="muted">${f.pB}% de chance</small></span><em>${odd(f.oddB)}</em></button>`).join("")}
   </div></section>
-  <h2 class="section">Pontos por equipe</h2>
+  <h2 class="section">Handicap</h2>
   <section class="card"><div class="grid">
-    ${state.fixtures.map((f) => ["a", "b"].map((t) => teamButtons(f, t)).join("")).join("")}
+    ${state.fixtures.map((f) => `
+      <button class="odd ${isSel(f.id, "hc", "A")}" data-pick="${f.id}" data-market="hc" data-side="A" ${bloqueado(f)}><span>${f.aEmote} ${f.a}<br><small class="muted">${sinal(f.handicap.linha)}</small></span><em>${odd(f.handicap.oddA)}</em></button>
+      <button class="odd ${isSel(f.id, "hc", "B")}" data-pick="${f.id}" data-market="hc" data-side="B" ${bloqueado(f)}><span>${f.bEmote} ${f.b}<br><small class="muted">${sinal(-f.handicap.linha)}</small></span><em>${odd(f.handicap.oddB)}</em></button>`).join("")}
   </div></section>
   ${duelosSecao()}`;
 }
 
 function legOdd(l) {
   const f = fx(l.fixtureId);
-  if (l.market === "tot") return l.side === "O" ? f.tot[l.team].oddO : f.tot[l.team].oddU;
+  if (l.market === "hc") return l.side === "A" ? f.handicap.oddA : f.handicap.oddB;
   return l.side === "A" ? f.oddA : f.oddB;
 }
 
 function legLabel(l) {
   const f = fx(l.fixtureId);
-  if (l.market === "tot") {
-    const name = l.team === "a" ? `${f.aEmote} ${f.a}` : `${f.bEmote} ${f.b}`;
-    return `${name}: ${l.side === "O" ? "mais" : "menos"} de ${num1(f.tot[l.team].line)}`;
+  if (l.market === "hc") {
+    const nome = l.side === "A" ? `${f.aEmote} ${f.a}` : `${f.bEmote} ${f.b}`;
+    const linha = l.side === "A" ? l.line : -l.line;
+    return `${nome} ${sinal(linha)}`;
   }
   return l.side === "A" ? `${f.aEmote} ${f.a}` : `${f.bEmote} ${f.b}`;
 }
@@ -426,4 +420,8 @@ function estatisticas() {
   <h2 class="section">Quem aposta em quem</h2>
   <section class="card" style="overflow-x:auto"><table class="tabela-matriz">${cab}${linhas}</table></section>
   <p class="muted">Linhas: quem apostou. Colunas: em quem. Valores em GC, a favor do jogador da coluna. Os emotes identificam cada jogador nos cards acima.</p>`;
+}
+
+function splashView() {
+  return `<div class="splash"><img src="escudo.png" alt=""><p>TOP CARAIO FC</p></div>`;
 }

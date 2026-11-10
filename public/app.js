@@ -11,6 +11,7 @@ let recibo = null;
 let modalNov = null;
 let sheet = null;
 let statsEscopo = "rodada";
+let splash = true;
 let primeiraCarga = true;
 
 const $ = (s) => document.querySelector(s);
@@ -102,7 +103,10 @@ function tabbar() {
 }
 
 function render() {
-  if (!state) return;
+  if (!state) {
+    if (splash) $("#app").innerHTML = splashView();
+    return;
+  }
   let body;
   if (tab === "admin") body = admin();
   else if (tab === "tabela") body = tabela();
@@ -117,7 +121,8 @@ function render() {
     tabbar() +
     (recibo ? reciboView() : "") +
     (modalNov ? novidadesView() : "") +
-    (sheet ? sheetView() : "");
+    (sheet ? sheetView() : "") +
+    (splash ? splashView() : "");
 }
 
 let toqueX = null;
