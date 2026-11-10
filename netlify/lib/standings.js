@@ -5,7 +5,7 @@ function standingsRows(state) {
   const rows = Object.fromEntries(
     state.schedule.players.map((p) => {
       const s = SEED[p.id] ?? { w: 0, l: 0, pf: 0, pa: 0 };
-      return [p.id, { id: p.id, name: p.name, team: p.team, w: s.w, l: s.l, pf: s.pf, pa: s.pa }];
+      return [p.id, { id: p.id, name: p.name, team: p.team, w: s.w, l: s.l, pf: s.pf, pa: s.pa, ajustado: false }];
     })
   );
   for (const weekRes of Object.values(state.results)) {
@@ -20,6 +20,15 @@ function standingsRows(state) {
       if (r.winner === "A") { A.w++; B.l++; } else { B.w++; A.l++; }
     }
   }
+  // Ajuste manual da tabela: soma por cima do histórico
+  for (const [id, aj] of Object.entries(state.ajusteTabela ?? {})) {
+    if (!rows[id]) continue;
+    rows[id].w += aj.w;
+    rows[id].l += aj.l;
+    rows[id].pf += aj.pf;
+    rows[id].pa += aj.pa;
+    rows[id].ajustado = true;
+  }
   return Object.values(rows);
 }
 
@@ -31,8 +40,7 @@ function shuffle(arr) {
   return arr;
 }
 
-// Probabilidade de playoffs: os jogos restantes são simulados com a projeção de cada time
-// como pontuação esperada, e os adversários são sorteados a cada semana
+// Playoff: os jogos restantes são simulados com a média de pontos feitos até agora
 function playoffChances(rows, sims = 2000) {
   const counts = Object.fromEntries(rows.map((r) => [r.id, 0]));
   for (let s = 0; s < sims; s++) {
@@ -67,9 +75,8 @@ function playoffChances(rows, sims = 2000) {
 export function standingsView(state) {
   const rows = standingsRows(state)
     .map((r) => {
-      const player = state.schedule.players.find((p) => p.id === r.id);
       const g = r.w + r.l;
-      return { ...r, mean: player ? player.projection : g ? r.pf / g : 100 };
+      return { ...r, mean: g ? r.pf / g : 100 };
     })
     .sort((x, y) => y.w - x.w || y.pf - x.pf);
   const chances = playoffChances(rows);
@@ -82,6 +89,7 @@ export function standingsView(state) {
     pct: r.w + r.l ? (r.w / (r.w + r.l)).toFixed(3).replace(/^0/, "") : ".000",
     pf: +r.pf.toFixed(1),
     pa: +r.pa.toFixed(1),
+    ajustado: r.ajustado,
     playoff: chances[r.id],
   }));
 }

@@ -2,8 +2,10 @@
 export const MARGEM = 0.05;
 export const ODD_MIN = 1.05;
 export const ODD_MAX = 20;
-export const P_MIN = 5;
-export const P_MAX = 95;
+export const P_MIN = 35;
+export const P_MAX = 65;
+// Acima desse valor, o handicap do jogo fica desligado
+export const HANDICAP_TETO = 15;
 
 // Dispersão da diferença de pontos entre dois times (usada só para converter % em linha de handicap)
 const SIGMA_DIF = 38 * Math.SQRT2;
@@ -35,7 +37,7 @@ export function oddsDaBarra(pInt) {
     p: pInt,
     oddA: oddDaProbabilidade(p),
     oddB: oddDaProbabilidade(1 - p),
-    handicap: {
+    handicap: Math.abs(linhaHandicap(p)) > HANDICAP_TETO ? null : {
       linha: linhaHandicap(p),
       oddA: oddDaProbabilidade(0.5),
       oddB: oddDaProbabilidade(0.5),
