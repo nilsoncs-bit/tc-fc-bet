@@ -84,10 +84,8 @@ function rodadaOf(state) {
   });
 }
 const RODADA = ["mb", "mp"];
-const rodadaBloqueada = (state) =>
-  state.frozen === state.week ||
-  state.congelados.fids.length > 0 ||
-  Object.keys(state.results[state.week]).length > 0;
+// Melhor/pior só fecha quando o admin usa CONGELAR TODOS
+const rodadaBloqueada = (state) => state.frozen === state.week;
 const fixtureBloqueado = (state, fid) => state.frozen === state.week || state.congelados.fids.includes(fid);
 
 const legWon = (leg, r) => {
@@ -129,7 +127,7 @@ function settleMulti(wallet, index, won) {
 
 function buildLeg(state, item) {
   if (RODADA.includes(item.market)) {
-    if (rodadaBloqueada(state)) throw new Error("Melhor/pior da rodada fechado: a rodada já começou");
+    if (rodadaBloqueada(state)) throw new Error("Melhor/pior da rodada fechado pelo admin");
     const alvo = state.schedule.players.find((p) => p.id === item.target);
     if (!alvo) throw new Error("Time inválido");
     const r = rodadaOf(state).find((x) => x.id === alvo.id);
