@@ -66,7 +66,7 @@ function rodadaSecao(market) {
   const ja = jaApostouRodada(market);
   const fechado = state.rodada.bloqueada || ja;
   const aviso = state.rodada.bloqueada
-    ? '<p class="muted">Fechado: a rodada já começou.</p>'
+    ? '<p class="muted">Fechado pelo admin.</p>'
     : ja ? '<p class="muted">Você já fez sua aposta neste mercado nesta semana.</p>'
     : '<p class="muted">Uma aposta por semana, só simples. Vale apostar em você mesmo.</p>';
   return `
@@ -249,7 +249,7 @@ function regras() {
     Mercados: vencedor do confronto, handicap, pontos por equipe e melhor/pior da rodada.<br>
     As odds saem da projeção de cada time. O admin pode ajustar cada mercado à mão, e o ajuste manual vale no lugar da projeção.<br>
     Pontos por equipe: a linha é a projeção arredondada para baixo, mais 0,5. Odds fixas: mais de 1,73 e menos de 2,12.<br>
-    Melhor/pior da rodada: aposte em quem fará a maior ou a menor pontuação entre todos os times. Uma aposta de cada por semana, só simples, e vale apostar em você mesmo. Fecha quando a rodada começa. Em caso de empate, todos os empatados contam como vencedores.<br>
+    Melhor/pior da rodada: aposte em quem fará a maior ou a menor pontuação entre todos os times. Uma aposta de cada por semana, só simples, e vale apostar em você mesmo. Fecha quando o admin congela todos os jogos. Em caso de empate, todos os empatados contam como vencedores.<br>
     Múltipla: escolha 2 ou mais seleções, uma por confronto (melhor/pior da rodada não entra). A odd total é a multiplicação das odds. Se uma perna perder, a múltipla perde.<br>
     Quando o admin lança o placar final, as apostas são liquidadas.<br>
     Em caso de empate no placar, o lado A vence.<br>

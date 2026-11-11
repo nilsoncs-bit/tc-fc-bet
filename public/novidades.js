@@ -21,7 +21,7 @@ const NOVIDADES = {
       itens: [
         "Aposte em quem fará a maior ou a menor pontuação entre todos os times.",
         "Uma aposta em cada por semana, só simples. Vale apostar em você mesmo.",
-        "Fecha quando a rodada começa.",
+        "Fecha quando o admin congela todos os jogos.",
       ],
     },
   ],
