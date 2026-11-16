@@ -38,14 +38,15 @@ function mercados() {
       <button class="odd ${isSel(f.id, "hc", "B")}" data-pick="${f.id}" data-market="hc" data-side="B" ${bloqueado(f)}><span>${f.bEmote} ${f.b}<br><small class="muted">${sinal(-f.handicap.linha)}</small></span><em>${odd(f.handicap.oddB)}</em></button>`).join("")}
   </div></section>
   <h2 class="section">Pontos por equipe</h2>
+  ${state.extrasFechados ? '<p class="muted">Fechado pelo admin.</p>' : ""}
   <section class="card"><div class="grid">
     ${state.fixtures.map((f) => ["a", "b"].map((t) => {
       const tt = f.totais[t];
       const nome = t === "a" ? `${f.aEmote} ${f.a}` : `${f.bEmote} ${f.b}`;
       const linha = num1(tt.linha);
       return `
-      <button class="odd ${isSel(f.id, "tot", "O", t)}" data-pick="${f.id}" data-market="tot" data-side="O" data-team="${t}" ${bloqueado(f)}><span>${nome}<br><small class="muted">mais de ${linha}</small></span><em>${odd(tt.over)}</em></button>
-      <button class="odd ${isSel(f.id, "tot", "U", t)}" data-pick="${f.id}" data-market="tot" data-side="U" data-team="${t}" ${bloqueado(f)}><span>${nome}<br><small class="muted">menos de ${linha}</small></span><em>${odd(tt.under)}</em></button>`;
+      <button class="odd ${isSel(f.id, "tot", "O", t)}" data-pick="${f.id}" data-market="tot" data-side="O" data-team="${t}" ${state.extrasFechados ? "disabled" : bloqueado(f)}><span>${nome}<br><small class="muted">mais de ${linha}</small></span><em>${odd(tt.over)}</em></button>
+      <button class="odd ${isSel(f.id, "tot", "U", t)}" data-pick="${f.id}" data-market="tot" data-side="U" data-team="${t}" ${state.extrasFechados ? "disabled" : bloqueado(f)}><span>${nome}<br><small class="muted">menos de ${linha}</small></span><em>${odd(tt.under)}</em></button>`;
     }).join("")).join("")}
   </div></section>
   ${rodadaSecao("mb")}

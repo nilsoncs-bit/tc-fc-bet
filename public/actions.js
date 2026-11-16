@@ -133,6 +133,10 @@ document.addEventListener("click", async (e) => {
     } else if (el.dataset.barraProjecao) {
       state = await post({ action: "odds", password: adminPw, valores: { [el.dataset.barraProjecao]: null } }, false);
       render();
+    } else if (el.hasAttribute("data-fechar-extras")) {
+      state = await post({ action: "fecharExtras", password: adminPw }, false);
+      alert(state.extrasFechados ? "Total e melhor/pior fechados." : "Total e melhor/pior reabertos.");
+      render();
     } else if (el.dataset.congelar) {
       const valor = el.dataset.valor === "1";
       state = await post({ action: "congelarJogo", password: adminPw, fid: el.dataset.congelar, valor }, false);

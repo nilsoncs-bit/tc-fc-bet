@@ -14,6 +14,9 @@ function admin() {
     <p class="muted">Rodada ${state.week}: ${state.frozen ? "<b>todos os jogos congelados</b>" : "apostas abertas"}</p>
     <button class="btn" data-freeze>${state.frozen ? "LIBERAR TODOS" : "CONGELAR TODOS"}</button>
     <br><br>
+    <p class="muted">Total e melhor/pior: ${state.extrasFechados ? "<b>fechados</b>" : "abertos"}. Vitória e handicap seguem o congelamento de cada jogo.</p>
+    <button class="btn" data-fechar-extras>${state.extrasFechados ? "REABRIR TOTAL E MELHOR/PIOR" : "FECHAR TOTAL E MELHOR/PIOR"}</button>
+    <br><br>
     <button class="btn" data-reopen>REABRIR CONFRONTOS DA RODADA</button>
   </section>
 
