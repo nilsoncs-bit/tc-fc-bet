@@ -454,7 +454,7 @@ const save = (store, state) => {
 };
 
 export default async (req) => {
-  const store = getStore("tcfc");
+  const store = getStore({ name: "tcfc", consistency: "strong" });
   const state = await loadState(store);
 
   if (req.method === "GET") {
