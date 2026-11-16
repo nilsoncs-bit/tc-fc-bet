@@ -84,8 +84,9 @@ function rodadaOf(state) {
   });
 }
 const RODADA = ["mb", "mp"];
-// Melhor/pior só fecha quando o admin usa CONGELAR TODOS
-const rodadaBloqueada = (state) => state.frozen === state.week;
+// Total e melhor/pior fecham com CONGELAR TODOS ou com o botão FECHAR TOTAL E MELHOR/PIOR
+const extrasFechados = (state) => state.extrasFechados === state.week;
+const rodadaBloqueada = (state) => state.frozen === state.week || extrasFechados(state);
 const fixtureBloqueado = (state, fid) => state.frozen === state.week || state.congelados.fids.includes(fid);
 
 const legWon = (leg, r) => {
@@ -169,6 +170,7 @@ function buildLeg(state, item) {
     };
   }
   if (item.market === "tot") {
+    if (extrasFechados(state)) throw new Error("Mercado de total fechado pelo admin");
     if (item.team !== "a" && item.team !== "b") throw new Error("Time inválido");
     if (item.side !== "O" && item.side !== "U") throw new Error("Lado inválido");
     const t = totalOf(state, item.team === "a" ? f.a : f.b);
@@ -359,6 +361,7 @@ function view(state) {
     scheduleWeek: cfg.week,
     pendingWeek: state.pending?.week ?? null,
     frozen: state.frozen === state.week,
+    extrasFechados: extrasFechados(state),
     odds: state.odds.valores,
     congelados: state.congelados.fids,
     players: cfg.players.map((p) => ({
@@ -553,6 +556,13 @@ export default async (req) => {
   if (body.action === "freeze") {
     if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
     state.frozen = state.frozen === state.week ? null : state.week;
+    await save(store, state);
+    return json(view(state));
+  }
+
+  if (body.action === "fecharExtras") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    state.extrasFechados = extrasFechados(state) ? null : state.week;
     await save(store, state);
     return json(view(state));
   }
