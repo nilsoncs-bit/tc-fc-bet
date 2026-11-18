@@ -65,7 +65,8 @@ export const EMOTES = {
 };
 
 export const PLAYOFF_SPOTS = 6;
-export const TOTAL_SEASON_WEEKS = 15;
+// Temporada regular vai até a W14 da NFL
+export const TOTAL_SEASON_WEEKS = 14;
 
 // Medalhas da liga na ESPN (1 = campeão, 2 = vice, 3 = terceiro). Times antigos sem dono conhecido ficaram de fora.
 export const MEDALHAS = {

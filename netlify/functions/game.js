@@ -1,7 +1,7 @@
 import { getStore } from "@netlify/blobs";
 import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
 import { placeBet, settleBet, winProbability, WEEKLY_STIPEND } from "./engine.js";
-import { PLAYERS, FIXTURES, EMOTES } from "./data.js";
+import { PLAYERS, FIXTURES, EMOTES, PLAYOFF_SPOTS } from "./data.js";
 import {
   json, weekNum, currentWeek, nextWeekId, ensureWallets, weekIdx, weekFromIdx, nflDe, rotuloSemana, semanaInterna,
 } from "../lib/utils.js";
@@ -429,6 +429,7 @@ function view(state) {
       };
     }),
     rodada: { bloqueada: rodadaBloqueada(state), times: rodadaOf(state) },
+    playoffSpots: PLAYOFF_SPOTS,
     standings: standingsView(state, configDe(state).sigmaTime).map((r) => ({ ...r, emote: emoteOf(state, r.id) })),
     duels: Object.values(state.duels).map((d) => ({
       ...d,
