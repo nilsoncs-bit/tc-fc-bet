@@ -66,3 +66,18 @@ export const EMOTES = {
 
 export const PLAYOFF_SPOTS = 6;
 export const TOTAL_SEASON_WEEKS = 15;
+
+// Medalhas da liga na ESPN (1 = campeão, 2 = vice, 3 = terceiro). Times antigos sem dono conhecido ficaram de fora.
+export const MEDALHAS = {
+  leonardo: [[2019, 1], [2021, 2], [2022, 3], [2023, 2]],
+  nilson: [[2020, 1], [2022, 2], [2025, 3]],
+  marcos: [[2022, 1], [2024, 2]],
+  matheus: [[2021, 1], [2024, 3]],
+  odireston: [[2023, 3], [2025, 1]],
+  reginaldo: [[2024, 1]],
+  andre: [[2020, 2], [2025, 2]],
+  gustavo: [[2019, 2], [2021, 3]],
+};
+
+// Quantos vão direto para a segunda rodada do playoff (bye)
+export const BYE_SPOTS = 2;
