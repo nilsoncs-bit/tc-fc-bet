@@ -214,23 +214,36 @@ function apostas() {
 
 const MEDALHA = { 1: "🥇", 2: "🥈", 3: "🥉" };
 
+// Na tabela só os ícones; tocando neles abre a janela com os anos
 function medalhasDe(r) {
-  if (!r.medalhas?.length) return { icones: "", anos: "" };
-  const ord = r.medalhas.slice().sort((x, y) => x.pos - y.pos || x.ano - y.ano);
-  return {
-    icones: ord.map((m) => MEDALHA[m.pos]).join(""),
-    anos: r.medalhas.slice().sort((x, y) => x.ano - y.ano).map((m) => `${MEDALHA[m.pos]}${m.ano}`).join(" "),
-  };
+  if (!r.medalhas?.length) return "";
+  const icones = r.medalhas.slice().sort((x, y) => x.pos - y.pos || x.ano - y.ano).map((m) => MEDALHA[m.pos]).join("");
+  return `<button class="medal-btn" data-medalhas="${r.id}" aria-label="Ver medalhas">${icones}</button>`;
+}
+
+function medalhasSheet(id) {
+  const r = state.standings.find((x) => x.id === id);
+  if (!r) return "";
+  const NOME = { 1: "Campeão", 2: "Vice", 3: "3º lugar" };
+  const linhas = r.medalhas.slice().sort((x, y) => y.ano - x.ano)
+    .map((m) => `<div class="row"><span>${MEDALHA[m.pos]} ${NOME[m.pos]}</span><b>${m.ano}</b></div>`).join("");
+  return `
+  <div class="modal-wrap"><div class="modal">
+    <h2>${r.emote} ${r.team}</h2>
+    <p class="muted">${r.name}</p>
+    ${linhas}
+    <div class="modal-nav"><button class="btn" data-sheet-fechar>FECHAR</button></div>
+  </div></div>`;
 }
 
 function tabela() {
   const pctCel = (v) => `<td class="num">${v}%</td>`;
   const rows = state.standings.map((r, i) => {
-    const m = medalhasDe(r);
+    // Tracejado em cima da primeira linha fora do playoff (fica logo abaixo do último classificado)
     return `
-    <tr class="${i === 5 ? "corte" : ""}">
+    <tr class="${i === (state.playoffSpots ?? 6) ? "corte" : ""}">
       <td>${i + 1}</td>
-      <td>${r.emote} ${r.team} ${m.icones}${r.ajustado ? ' <span class="muted">· ajustado</span>' : ""}<div class="muted">${r.name}</div>${m.anos ? `<div class="muted medalhas">${m.anos}</div>` : ""}</td>
+      <td>${r.emote} ${r.team} ${medalhasDe(r)}${r.ajustado ? ' <span class="muted">· ajustado</span>' : ""}<div class="muted">${r.name}</div></td>
       <td class="num">${r.w}-${r.l}</td>
       <td class="num">${num1(r.pf)}</td>
       <td class="num">${num1(r.pa)}</td>
@@ -247,7 +260,7 @@ function tabela() {
       ${rows}
     </table>
   </section>
-  <p class="muted">A linha tracejada separa os 6 primeiros, que vão ao playoff. Bye: chance de terminar entre os 2 primeiros. Último: chance de terminar em último. As % são estimativas por simulação dos jogos restantes. Medalhas: 🥇 campeão, 🥈 vice e 🥉 3º, com o ano.</p>`;
+  <p class="muted">A linha tracejada separa os 6 primeiros, que vão ao playoff. Bye: chance de terminar entre os 2 primeiros. Último: chance de terminar em último. As % são estimativas por simulação dos jogos restantes. Medalhas: 🥇 campeão, 🥈 vice e 🥉 3º. Toque nelas para ver os anos.</p>`;
 }
 
 function placar() {
@@ -425,6 +438,7 @@ function barraSugerida(pA, pB) {
 }
 
 function sheetView() {
+  if (sheet.tipo === "medalhas") return medalhasSheet(sheet.id);
   if (sheet.tipo === "novo") {
     const outros = state.players.filter((p) => p.id !== session?.user);
     const eu = me();

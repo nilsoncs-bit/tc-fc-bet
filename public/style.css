@@ -268,7 +268,7 @@ main { padding-bottom: 250px; }
 .btn:active { transform: scale(.97); }
 
 /* Versão 13: medalhas na tabela e Admin em blocos que abrem e fecham */
-.medalhas { font-size: 11px; }
+.medal-btn { background: none; border: 0; padding: 0 2px; font-size: 13px; cursor: pointer; letter-spacing: -1px; }
 details.bloco { margin-bottom: 12px; }
 details.bloco > summary {
   list-style: none; cursor: pointer; font-weight: 800; padding: 14px 16px;

@@ -108,6 +108,9 @@ document.addEventListener("click", async (e) => {
     } else if (el.dataset.espec) {
       sheet = { tipo: "espec", duelId: el.dataset.espec };
       render();
+    } else if (el.dataset.medalhas) {
+      sheet = { tipo: "medalhas", id: el.dataset.medalhas };
+      render();
     } else if (el.hasAttribute("data-sheet-fechar")) {
       sheet = null;
       render();
