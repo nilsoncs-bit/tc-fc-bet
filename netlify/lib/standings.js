@@ -1,5 +1,5 @@
-import { simulateMatch, DEFAULT_SIGMA } from "../functions/engine.js";
-import { SEED, PLAYOFF_SPOTS, TOTAL_SEASON_WEEKS } from "../functions/data.js";
+import { simulateMatch } from "../functions/engine.js";
+import { SEED, PLAYOFF_SPOTS, BYE_SPOTS, TOTAL_SEASON_WEEKS, MEDALHAS } from "../functions/data.js";
 
 function standingsRows(state) {
   const rows = Object.fromEntries(
@@ -40,9 +40,11 @@ function shuffle(arr) {
   return arr;
 }
 
-// Playoff: os jogos restantes são simulados com a média de pontos feitos até agora
-function playoffChances(rows, sims = 2000) {
+// Playoff, bye (2 primeiros) e último lugar: os jogos restantes são simulados com a média de pontos feitos até agora
+function playoffChances(rows, sigma, sims = 2000) {
   const counts = Object.fromEntries(rows.map((r) => [r.id, 0]));
+  const bye = Object.fromEntries(rows.map((r) => [r.id, 0]));
+  const ultimo = Object.fromEntries(rows.map((r) => [r.id, 0]));
   for (let s = 0; s < sims; s++) {
     const sim = rows.map((r) => ({
       id: r.id,
@@ -58,28 +60,29 @@ function playoffChances(rows, sims = 2000) {
       for (let i = 0; i + 1 < pool.length; i += 2) {
         const A = pool[i];
         const B = pool[i + 1];
-        const res = simulateMatch(A.mean, B.mean, { sigma: DEFAULT_SIGMA });
+        const res = simulateMatch(A.mean, B.mean, { sigma });
         A.pf += res.scoreA;
         B.pf += res.scoreB;
         if (res.winner === "A") { A.w++; B.l++; } else { B.w++; A.l++; }
       }
     }
-    sim
-      .sort((x, y) => y.w - x.w || y.pf - x.pf)
-      .slice(0, PLAYOFF_SPOTS)
-      .forEach((x) => counts[x.id]++);
+    sim.sort((x, y) => y.w - x.w || y.pf - x.pf);
+    sim.slice(0, PLAYOFF_SPOTS).forEach((x) => counts[x.id]++);
+    sim.slice(0, BYE_SPOTS).forEach((x) => bye[x.id]++);
+    if (sim.length) ultimo[sim[sim.length - 1].id]++;
   }
-  return Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, Math.round((v / sims) * 100)]));
+  const pct = (m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, Math.round((v / sims) * 100)]));
+  return { playoff: pct(counts), bye: pct(bye), ultimo: pct(ultimo) };
 }
 
-export function standingsView(state) {
+export function standingsView(state, sigma = 30) {
   const rows = standingsRows(state)
     .map((r) => {
       const g = r.w + r.l;
       return { ...r, mean: g ? r.pf / g : 100 };
     })
     .sort((x, y) => y.w - x.w || y.pf - x.pf);
-  const chances = playoffChances(rows);
+  const chances = playoffChances(rows, sigma);
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -90,6 +93,9 @@ export function standingsView(state) {
     pf: +r.pf.toFixed(1),
     pa: +r.pa.toFixed(1),
     ajustado: r.ajustado,
-    playoff: chances[r.id],
+    playoff: chances.playoff[r.id],
+    bye: chances.bye[r.id],
+    ultimo: chances.ultimo[r.id],
+    medalhas: (MEDALHAS[r.id] ?? []).map(([ano, pos]) => ({ ano, pos })),
   }));
 }
