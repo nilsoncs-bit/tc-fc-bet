@@ -6,11 +6,23 @@ function loginView() {
     <div class="row"><input id="lpin" class="pw" type="password" inputmode="numeric" maxlength="6" placeholder="PIN (4 a 6 números)"></div>
     <button class="btn" data-login style="width:100%">ENTRAR</button>
     <p class="muted">Primeiro acesso: o PIN que você digitar agora fica salvo para os próximos.</p>
+    <button class="pill" data-convidado style="width:100%">👀 ENTRAR COMO CONVIDADO</button>
+    <p class="muted">Convidado vê tudo, mas não aposta.</p>
     ${loginMsg ? `<p>${loginMsg}</p>` : ""}
   </section>`;
 }
 
-const bloqueado = (f) => (f.result || f.bloqueado ? "disabled" : "");
+const bloqueado = (f) => (f.result || f.bloqueado || convidado() ? "disabled" : "");
+const bloqueadoExtras = (f) => (f.result || f.extrasBloqueados || convidado() ? "disabled" : "");
+
+function convidadoApostas() {
+  return `
+  <h2 class="section">Apostas</h2>
+  <section class="card pad">
+    <p>Você está como convidado. Para ver e fazer suas apostas, entre com seu nome.</p>
+    <button class="btn" data-action="logout" style="width:100%">ENTRAR COM MEU NOME</button>
+  </section>`;
+}
 
 const sinal = (x) => (x > 0 ? "+" : "") + num1(x);
 
@@ -20,7 +32,7 @@ function mercados() {
   return `
   <div class="topo-mercados">
     <span class="chip-status ${state.frozen ? "fechado" : "aberto"}">${state.frozen ? "Congeladas" : "Apostas abertas"}</span>
-    <span class="muted"> · ${state.week}</span>
+    <span class="muted"> · ${state.semana}</span>
   </div>
   ${aviso}
   ${ativos.length ? `<h2 class="section">Duelos ativos</h2>${ativos.map(duelCard).join("")}` : ""}
@@ -31,22 +43,20 @@ function mercados() {
       <button class="odd ${isSel(f.id, "ml", "B")}" data-pick="${f.id}" data-market="ml" data-side="B" ${bloqueado(f)}><span>${f.bEmote} ${f.b}<br><small class="muted">${f.pB}% de chance</small></span><em>${odd(f.oddB)}</em></button>`).join("")}
   </div></section>
   <h2 class="section">Handicap</h2>
-  ${state.fixtures.some((f) => !f.handicap) ? '<p class="muted">Sem handicap nos jogos muito desequilibrados (linha acima de 15 pontos).</p>' : ""}
   <section class="card"><div class="grid">
-    ${state.fixtures.filter((f) => f.handicap).map((f) => `
-      <button class="odd ${isSel(f.id, "hc", "A")}" data-pick="${f.id}" data-market="hc" data-side="A" ${bloqueado(f)}><span>${f.aEmote} ${f.a}<br><small class="muted">${sinal(f.handicap.linha)}</small></span><em>${odd(f.handicap.oddA)}</em></button>
-      <button class="odd ${isSel(f.id, "hc", "B")}" data-pick="${f.id}" data-market="hc" data-side="B" ${bloqueado(f)}><span>${f.bEmote} ${f.b}<br><small class="muted">${sinal(-f.handicap.linha)}</small></span><em>${odd(f.handicap.oddB)}</em></button>`).join("")}
+    ${state.fixtures.map((f) => `
+      <button class="odd ${isSel(f.id, "hc", "A")}" data-pick="${f.id}" data-market="hc" data-side="A" ${bloqueadoExtras(f)}><span>${f.aEmote} ${f.a}<br><small class="muted">${sinal(f.handicap.linha)}</small></span><em>${odd(f.handicap.oddA)}</em></button>
+      <button class="odd ${isSel(f.id, "hc", "B")}" data-pick="${f.id}" data-market="hc" data-side="B" ${bloqueadoExtras(f)}><span>${f.bEmote} ${f.b}<br><small class="muted">${sinal(-f.handicap.linha)}</small></span><em>${odd(f.handicap.oddB)}</em></button>`).join("")}
   </div></section>
   <h2 class="section">Pontos por equipe</h2>
-  ${state.extrasFechados ? '<p class="muted">Fechado pelo admin.</p>' : ""}
   <section class="card"><div class="grid">
     ${state.fixtures.map((f) => ["a", "b"].map((t) => {
       const tt = f.totais[t];
       const nome = t === "a" ? `${f.aEmote} ${f.a}` : `${f.bEmote} ${f.b}`;
       const linha = num1(tt.linha);
       return `
-      <button class="odd ${isSel(f.id, "tot", "O", t)}" data-pick="${f.id}" data-market="tot" data-side="O" data-team="${t}" ${state.extrasFechados ? "disabled" : bloqueado(f)}><span>${nome}<br><small class="muted">mais de ${linha}</small></span><em>${odd(tt.over)}</em></button>
-      <button class="odd ${isSel(f.id, "tot", "U", t)}" data-pick="${f.id}" data-market="tot" data-side="U" data-team="${t}" ${state.extrasFechados ? "disabled" : bloqueado(f)}><span>${nome}<br><small class="muted">menos de ${linha}</small></span><em>${odd(tt.under)}</em></button>`;
+      <button class="odd ${isSel(f.id, "tot", "O", t)}" data-pick="${f.id}" data-market="tot" data-side="O" data-team="${t}" ${bloqueadoExtras(f)}><span>${nome}<br><small class="muted">mais de ${linha}</small></span><em>${odd(tt.over)}</em></button>
+      <button class="odd ${isSel(f.id, "tot", "U", t)}" data-pick="${f.id}" data-market="tot" data-side="U" data-team="${t}" ${bloqueadoExtras(f)}><span>${nome}<br><small class="muted">menos de ${linha}</small></span><em>${odd(tt.under)}</em></button>`;
     }).join("")).join("")}
   </div></section>
   ${rodadaSecao("mb")}
@@ -54,7 +64,7 @@ function mercados() {
   ${duelosSecao()}`;
 }
 
-// Melhor (mb) e pior (mp) da rodada: só aposta simples, uma de cada por semana
+// Melhor (mb) e Odireston (mp) da rodada: só aposta simples, uma de cada por semana
 const jaApostouRodada = (market) =>
   (me()?.history ?? []).some((h) => h.type === "bet" && h.week === state.week && h.market === market && h.status !== "cancelled");
 
@@ -65,13 +75,13 @@ function rodadaSecao(market) {
   const campo = melhor ? "oddMelhor" : "oddPior";
   const lista = state.rodada.times.slice().sort((x, y) => x[campo] - y[campo]);
   const ja = jaApostouRodada(market);
-  const fechado = state.rodada.bloqueada || ja;
+  const fechado = state.rodada.bloqueada || ja || convidado();
   const aviso = state.rodada.bloqueada
     ? '<p class="muted">Fechado pelo admin.</p>'
     : ja ? '<p class="muted">Você já fez sua aposta neste mercado nesta semana.</p>'
     : '<p class="muted">Uma aposta por semana, só simples. Vale apostar em você mesmo.</p>';
   return `
-  <h2 class="section">${melhor ? "Melhor da rodada" : "Pior da rodada"}</h2>
+  <h2 class="section">${melhor ? "Melhor da rodada" : "Odireston da rodada"}</h2>
   ${aviso}
   <section class="card"><div class="grid">
     ${lista.map((r) => {
@@ -97,7 +107,7 @@ function legOdd(l) {
 function legLabel(l) {
   if (l.market === "mb" || l.market === "mp") {
     const p = timeDe(l.team);
-    return `${p.emote} ${p.team} ${l.market === "mb" ? "melhor" : "pior"} da rodada`;
+    return `${p.emote} ${p.team} ${l.market === "mb" ? "melhor" : "Odireston"} da rodada`;
   }
   const f = fx(l.fixtureId);
   if (l.market === "tot") {
@@ -155,7 +165,7 @@ function betCard(h) {
   else money = `Perdeu: <b>${h.stake} GC</b>`;
   return `
   <section class="card bet">
-    <div class="row"><b>${title}</b><span class="muted">${h.week}</span>${statusBadge(h)}</div>
+    <div class="row"><b>${title}</b><span class="muted">${rotulo(h.week)}</span>${statusBadge(h)}</div>
     ${rows}
     <div class="row"><span>Apostado: <b>${h.stake} GC</b> · Odd total <b>${odd(h.odd)}</b></span></div>
     <div class="row"><span>${money}</span></div>
@@ -198,30 +208,46 @@ function apostas() {
   ${filtradas.length ? filtradas.map(betCard).join("") : `<section class="card pad muted">Nenhuma aposta aqui ainda.</section>`}
   <h2 class="section">Bônus semanal</h2>
   <section class="card pad">
-    ${bonus.length ? bonus.map((s) => `<div class="row"><span>${s.weekId}</span><b>+${s.amount} GC</b></div>`).join("") : `<span class="muted">Nenhum bônus ainda.</span>`}
+    ${bonus.length ? bonus.map((s) => `<div class="row"><span>${rotulo(s.weekId)}</span><b>+${s.amount} GC</b></div>`).join("") : `<span class="muted">Nenhum bônus ainda.</span>`}
   </section>`;
 }
 
+const MEDALHA = { 1: "🥇", 2: "🥈", 3: "🥉" };
+
+function medalhasDe(r) {
+  if (!r.medalhas?.length) return { icones: "", anos: "" };
+  const ord = r.medalhas.slice().sort((x, y) => x.pos - y.pos || x.ano - y.ano);
+  return {
+    icones: ord.map((m) => MEDALHA[m.pos]).join(""),
+    anos: r.medalhas.slice().sort((x, y) => x.ano - y.ano).map((m) => `${MEDALHA[m.pos]}${m.ano}`).join(" "),
+  };
+}
+
 function tabela() {
-  const rows = state.standings.map((r, i) => `
+  const pctCel = (v) => `<td class="num">${v}%</td>`;
+  const rows = state.standings.map((r, i) => {
+    const m = medalhasDe(r);
+    return `
     <tr class="${i === 5 ? "corte" : ""}">
       <td>${i + 1}</td>
-      <td>${r.emote} ${r.team}${r.ajustado ? ' <span class="muted">· ajustado</span>' : ""}<div class="muted">${r.name}</div></td>
+      <td>${r.emote} ${r.team} ${m.icones}${r.ajustado ? ' <span class="muted">· ajustado</span>' : ""}<div class="muted">${r.name}</div>${m.anos ? `<div class="muted medalhas">${m.anos}</div>` : ""}</td>
       <td class="num">${r.w}-${r.l}</td>
-      <td class="num">${r.pct}</td>
       <td class="num">${num1(r.pf)}</td>
       <td class="num">${num1(r.pa)}</td>
       <td class="num"><span class="barra"><span style="width:${r.playoff}%"></span></span>${r.playoff}%</td>
-    </tr>`).join("");
+      ${pctCel(r.bye)}
+      ${pctCel(r.ultimo)}
+    </tr>`;
+  }).join("");
   return `
   <h2 class="section">Tabela</h2>
   <section class="card" style="overflow-x:auto">
-    <table>
-      <tr><th>#</th><th>Time</th><th class="num">V-D</th><th class="num">%</th><th class="num">PF</th><th class="num">PA</th><th class="num">Playoff</th></tr>
+    <table class="tabela-classif">
+      <tr><th>#</th><th>Time</th><th class="num">V-D</th><th class="num">PF</th><th class="num">PA</th><th class="num">Playoff</th><th class="num">Bye</th><th class="num">Último</th></tr>
       ${rows}
     </table>
   </section>
-  <p class="muted">A linha tracejada separa os 6 primeiros, que vão ao playoff. A % é uma estimativa por simulação dos jogos restantes.</p>`;
+  <p class="muted">A linha tracejada separa os 6 primeiros, que vão ao playoff. Bye: chance de terminar entre os 2 primeiros. Último: chance de terminar em último. As % são estimativas por simulação dos jogos restantes. Medalhas: 🥇 campeão, 🥈 vice e 🥉 3º, com o ano.</p>`;
 }
 
 function placar() {
@@ -243,15 +269,21 @@ function placar() {
 }
 
 function regras() {
+  const c = state.config;
+  const pc = (x) => String(+(x * 100).toFixed(1)).replace(".", ",") + "%";
   return `
   <h2 class="section">Regras</h2>
   <section class="card pad">
-    Cada jogador começa com <b>1000 Game Coins</b> e recebe <b>100 GC por semana</b>.<br>
-    Mercados: vencedor do confronto, handicap, pontos por equipe e melhor/pior da rodada.<br>
+    Cada jogador começa com <b>1000 Game Coins</b>. Quando a semana fecha, recebe <b>100 GC</b> quem apostou pelo menos 1 GC nela.<br>
+    A semana só vira quando o admin fecha a rodada.<br>
+    Mercados: vencedor, handicap, pontos por equipe, melhor da rodada e Odireston da rodada.<br>
     As odds saem da projeção de cada time. O admin pode ajustar cada mercado à mão, e o ajuste manual vale no lugar da projeção.<br>
-    Pontos por equipe: a linha é a projeção arredondada para baixo, mais 0,5. Odds fixas: mais de 1,73 e menos de 2,12.<br>
-    Melhor/pior da rodada: aposte em quem fará a maior ou a menor pontuação entre todos os times. Uma aposta de cada por semana, só simples, e vale apostar em você mesmo. Fecha quando o admin congela todos os jogos. Em caso de empate, todos os empatados contam como vencedores.<br>
-    Múltipla: escolha 2 ou mais seleções, uma por confronto (melhor/pior da rodada não entra). A odd total é a multiplicação das odds. Se uma perna perder, a múltipla perde.<br>
+    Vencedor: chance pela diferença das projeções. Margem da casa: ${pc(c.margemVitoria)}.<br>
+    Handicap: a linha é a diferença das projeções, sem limite. Margem: ${pc(c.margemHandicap)}.<br>
+    Pontos por equipe: a linha é a projeção arredondada para baixo, mais 0,5. Mais de paga ${odd(1 / (c.pOver * (1 + c.margemTotal)))} e menos de paga ${odd(1 / ((1 - c.pOver) * (1 + c.margemTotal)))}.<br>
+    Melhor e Odireston da rodada: aposte em quem fará a maior ou a menor pontuação entre todos os times. Uma aposta em cada por semana, só simples, e vale apostar em você mesmo. Margem: ${pc(c.margemRodada)}, odd máxima ${odd(c.tetoRodada)}. Em caso de empate, todos os empatados contam como vencedores.<br>
+    O admin pode congelar um jogo inteiro, ou fechar só o handicap e o total de um jogo, deixando o vencedor aberto.<br>
+    Múltipla: escolha 2 ou mais seleções, uma por confronto (melhor e Odireston da rodada não entram). A odd total é a multiplicação das odds. Se uma perna perder, a múltipla perde.<br>
     Quando o admin lança o placar final, as apostas são liquidadas.<br>
     Em caso de empate no placar, o lado A vence.<br>
     Game Coins são virtuais: não podem ser convertidos, trocados ou sacados por dinheiro.
@@ -268,8 +300,9 @@ function mais() {
     <button class="item" data-tab="estatisticas"><b>Estatísticas</b><span>Apostas, decepções e quem aposta em quem</span></button>
     <button class="item" data-novidades><b>Novidades</b><span>O que mudou no app</span></button>
     <button class="item" data-theme-toggle><b>Modo ${claro ? "escuro" : "claro"}</b><span>Troca a aparência do app</span></button>
-    <button class="item" data-tab="admin"><b>Admin</b><span>Confrontos, resultados e controles</span></button>
+    ${convidado() ? "" : `<button class="item" data-tab="admin"><b>Admin</b><span>Confrontos, resultados e controles</span></button>`}
     ${cur ? `<button class="item neg" data-action="logout"><b>Sair</b><span>${cur.name}</span></button>` : ""}
+    ${convidado() ? `<button class="item neg" data-action="logout"><b>Sair do modo convidado</b><span>Entrar com seu nome</span></button>` : ""}
   </section>`;
 }
 
@@ -483,7 +516,7 @@ function estatisticas() {
 }
 
 function splashView() {
-  return `<div class="splash"><img src="escudo.png" alt=""><p>TOP CARAIO FC</p></div>`;
+  return `<div class="splash"><div class="splash-brilho"></div><div class="splash-cai"><div class="splash-gira"><img src="escudo.png" alt=""></div></div><p>TOP CARAIO FC</p><span class="splash-linha"></span></div>`;
 }
 
 

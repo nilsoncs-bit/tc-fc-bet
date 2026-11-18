@@ -1,27 +1,42 @@
 // Novidades mostradas ao abrir o app. Para uma nova versão, troque a versão e as páginas.
 const NOVIDADES = {
-  versao: "2026-11-12",
+  versao: "2026-11-17-v13",
   paginas: [
     {
-      titulo: "Odds pela projeção",
+      titulo: "Versão 13",
       itens: [
-        "Vitória e handicap voltam a sair da projeção de cada time.",
-        "O admin pode ajustar cada mercado à mão. O ajuste manual vale no lugar da projeção.",
+        "Semanas agora seguem a NFL: W11 2026, W12 2026...",
+        "Dá para entrar como convidado, só para ver.",
+        "Nova abertura do app.",
       ],
     },
     {
-      titulo: "Pontos por equipe",
+      titulo: "Odireston da rodada",
       itens: [
-        "Aposte se o time vai fazer mais ou menos que a linha.",
-        "A linha é a projeção arredondada para baixo, mais 0,5. Mais de paga 1,73 e menos de paga 2,12.",
+        "O antigo \"pior da rodada\" agora se chama Odireston da rodada.",
+        "Continua uma aposta em cada (melhor e Odireston) por semana.",
       ],
     },
     {
-      titulo: "Melhor e pior da rodada",
+      titulo: "Odds mais justas",
       itens: [
-        "Aposte em quem fará a maior ou a menor pontuação entre todos os times.",
-        "Uma aposta em cada por semana, só simples. Vale apostar em você mesmo.",
-        "Fecha quando o admin congela todos os jogos.",
+        "Handicap sem limite: a linha é a diferença das projeções.",
+        "Pontos por equipe agora pagam 1,90 nos dois lados.",
+        "Desvios medidos nas últimas 5 semanas da liga.",
+      ],
+    },
+    {
+      titulo: "Bônus semanal",
+      itens: [
+        "Os 100 GC da semana vão só para quem apostou pelo menos 1 GC nela.",
+        "A semana vira quando o admin fecha a rodada.",
+      ],
+    },
+    {
+      titulo: "Tabela",
+      itens: [
+        "Medalhas de cada um ao lado do nome, com o ano.",
+        "Chance de bye (2 primeiros) e de terminar em último.",
       ],
     },
   ],

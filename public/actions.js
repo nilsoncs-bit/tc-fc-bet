@@ -31,10 +31,14 @@ document.addEventListener("click", async (e) => {
     if (el.dataset.tab) {
       tab = el.dataset.tab;
       render();
+    } else if (el.hasAttribute("data-convidado")) {
+      entrarConvidado();
     } else if (el.hasAttribute("data-login")) {
       await login($("#lname").value, $("#lpin").value.trim());
     } else if (el.dataset.action === "logout") {
       logout();
+    } else if (el.dataset.pick && convidado()) {
+      alert("Convidado só visualiza. Entre com seu nome para apostar.");
     } else if (el.dataset.pick) {
       pickLeg(el.dataset.pick, el.dataset.market, el.dataset.side, el.dataset.team);
       if (navigator.vibrate) navigator.vibrate(10);
@@ -49,7 +53,7 @@ document.addEventListener("click", async (e) => {
       const apostado = stake;
       const legs = slip.map(({ fixtureId, market, side, team }) =>
         market === "mb" || market === "mp" ? { market, target: team } : { fixtureId, market, side, team });
-      const semana = state.week;
+      const semana = state.semana;
       state = slip.length === 1
         ? await post({ action: "bet", ...legs[0], stake })
         : await post({ action: "multi", legs, stake });
@@ -133,9 +137,45 @@ document.addEventListener("click", async (e) => {
     } else if (el.dataset.barraProjecao) {
       state = await post({ action: "odds", password: adminPw, valores: { [el.dataset.barraProjecao]: null } }, false);
       render();
-    } else if (el.hasAttribute("data-fechar-extras")) {
-      state = await post({ action: "fecharExtras", password: adminPw }, false);
-      alert(state.extrasFechados ? "Total e melhor/pior fechados." : "Total e melhor/pior reabertos.");
+    } else if (el.hasAttribute("data-fechar-rodada")) {
+      if (state.frozen) return alert("Todos os jogos estão congelados. Libere os jogos para mexer só no melhor/Odireston.");
+      state = await post({ action: "fecharRodada", password: adminPw }, false);
+      render();
+    } else if (el.dataset.extrasJogo) {
+      const valor = el.dataset.valor === "1";
+      state = await post({ action: "fecharExtrasJogo", password: adminPw, fid: el.dataset.extrasJogo, valor }, false);
+      render();
+    } else if (el.hasAttribute("data-avancar")) {
+      const faltam = state.fixtures.filter((f) => !f.result).length;
+      const proxima = state.fila.some((x) => x.nfl === state.nfl.atual + 1);
+      const avisos = [
+        faltam ? `${faltam} jogo(s) ainda sem placar: as apostas deles ficam abertas (dá para liquidar depois em Outras ferramentas).` : "",
+        proxima ? "" : `Não há confrontos da W${state.nfl.atual + 1} na fila: os confrontos atuais continuam.`,
+      ].filter(Boolean).join("\n\n");
+      if (!confirm(`Fechar a ${state.semana} e avançar?${avisos ? "\n\n" + avisos : ""}`)) return;
+      const r = await post({ action: "avancarSemana", password: adminPw, semanaAtual: state.week }, false);
+      state = r;
+      alert(`Agora é ${state.semana}. Bônus de 100 GC para ${r.bonus.length} jogador(es).${r.trocouConfrontos ? " Confrontos da fila carregados." : ""}`);
+      render();
+    } else if (el.hasAttribute("data-config-save")) {
+      const pct = ["margemVitoria", "margemHandicap", "margemTotal", "pOver", "margemRodada"];
+      const config = {};
+      document.querySelectorAll("input[data-cfg]").forEach((i) => {
+        const k = i.dataset.cfg;
+        const v = i.value.trim().replace(",", ".");
+        if (v === "") config[k] = "";
+        else config[k] = pct.includes(k) ? Number(v) / 100 : Number(v);
+      });
+      state = await post({ action: "config", password: adminPw, config }, false);
+      alert("Configuração salva.");
+      render();
+    } else if (el.hasAttribute("data-semana-nfl")) {
+      state = await post({ action: "semanaNfl", password: adminPw, semana: Number($("#nflSemana").value), temporada: Number($("#nflTemporada").value) }, false);
+      alert(`Semana renomeada: ${state.semana}.`);
+      render();
+    } else if (el.dataset.filaRemover) {
+      if (!confirm(`Remover a W${el.dataset.filaRemover} da fila?`)) return;
+      state = await post({ action: "filaRemover", password: adminPw, nfl: Number(el.dataset.filaRemover) }, false);
       render();
     } else if (el.dataset.congelar) {
       const valor = el.dataset.valor === "1";
@@ -219,7 +259,7 @@ document.addEventListener("click", async (e) => {
       render();
     } else if (el.hasAttribute("data-schedule")) {
       state = await post({ action: "schedule", password: adminPw, target: $("#target").value, text: $("#sched").value }, false);
-      alert("Confrontos salvos.");
+      alert($("#target").value === "fila" ? "Fila atualizada." : "Confrontos desta semana salvos.");
       render();
     } else if (el.hasAttribute("data-save")) {
       const scores = {};
@@ -250,7 +290,7 @@ document.addEventListener("input", (e) => {
     const p = Number(e.target.value);
     const o = oddsPrevia(p);
     const txt = document.querySelector(`[data-odd-txt="${fid}"]`);
-    if (txt) txt.textContent = `${p}% · odd ${odd(o.oddA)} · ${100 - p}% · odd ${odd(o.oddB)} · handicap ${o.linhaTxt}`;
+    if (txt) txt.textContent = `${p}% · odd ${odd(o.oddA)} · ${100 - p}% · odd ${odd(o.oddB)}`;
   }
 });
 
@@ -276,7 +316,19 @@ document.addEventListener("change", (e) => {
   }
 });
 
+// Lembra quais blocos do Admin estão abertos
+document.addEventListener("toggle", (e) => {
+  const id = e.target?.dataset?.bloco;
+  if (!id) return;
+  if (e.target.open) adminAbertos.add(id);
+  else adminAbertos.delete(id);
+}, true);
+
 window.addEventListener("focus", load);
 initTheme();
-setTimeout(() => { splash = false; render(); }, 1600);
+// Abertura numa camada própria, criada uma vez, para a animação não reiniciar quando a tela redesenha
+const camadaSplash = document.createElement("div");
+camadaSplash.innerHTML = splashView();
+document.body.appendChild(camadaSplash);
+setTimeout(() => { splash = false; camadaSplash.remove(); }, 3400);
 load();

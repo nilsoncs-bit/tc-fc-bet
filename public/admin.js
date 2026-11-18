@@ -1,3 +1,11 @@
+// Blocos abertos no Admin (para não fecharem quando a tela redesenha)
+const adminAbertos = new Set(["rodada"]);
+const bloco = (id, titulo, conteudo) => `
+  <details class="card bloco" data-bloco="${id}" ${adminAbertos.has(id) ? "open" : ""}>
+    <summary>${titulo}</summary>
+    <div class="dentro">${conteudo}</div>
+  </details>`;
+
 function admin() {
   if (!adminPw) {
     return `
@@ -8,133 +16,166 @@ function admin() {
     </section>`;
   }
   const opcoesJogadores = state.players.map((p) => `<option value="${p.id}">${p.emote} ${p.name}</option>`).join("");
+  const comPlacar = state.fixtures.filter((f) => f.result).length;
+  const abertas = state.players.reduce((n, p) => n + p.history.filter((h) => (h.type === "bet" || h.type === "multi") && h.status === "open" && h.week === state.week).length, 0);
+  const fila = state.fila.length ? state.fila.map((x) => `W${x.nfl}`).join(", ") : "nenhuma";
   return `
-  <h2 class="section">Controles</h2>
+  <h2 class="section">Admin</h2>
+
   <section class="card pad">
-    <p class="muted">Rodada ${state.week}: ${state.frozen ? "<b>todos os jogos congelados</b>" : "apostas abertas"}</p>
-    <button class="btn" data-freeze>${state.frozen ? "LIBERAR TODOS" : "CONGELAR TODOS"}</button>
-    <br><br>
-    <p class="muted">Total e melhor/pior: ${state.extrasFechados ? "<b>fechados</b>" : "abertos"}. Vitória e handicap seguem o congelamento de cada jogo.</p>
-    <button class="btn" data-fechar-extras>${state.extrasFechados ? "REABRIR TOTAL E MELHOR/PIOR" : "FECHAR TOTAL E MELHOR/PIOR"}</button>
-    <br><br>
-    <button class="btn" data-reopen>REABRIR CONFRONTOS DA RODADA</button>
+    <div class="row"><span class="semana-grande">${state.semana}</span></div>
+    <p class="muted">${comPlacar} de ${state.fixtures.length} jogos com placar · ${abertas} aposta(s) em aberto · Na fila: ${fila}</p>
+    <button class="btn btn-largo" data-avancar>FECHAR SEMANA E AVANÇAR</button>
+    <p class="muted">A semana só vira aqui. Ao avançar: bônus de 100 para quem apostou nesta semana, odds e congelamentos zerados, e entram os confrontos da fila.</p>
   </section>
 
-  <h2 class="section">Confrontos</h2>
-  <section class="card pad">
-    <div class="row"><select id="target">
-      <option value="next">Próxima semana</option>
-      <option value="current">Esta semana (${state.week})</option>
-    </select></div>
-    <textarea id="sched" placeholder="Nome | Time | Projeção
-Nome | Time | Projeção
+  ${bloco("rodada", "Rodada: congelar e fechar", rodadaCtl())}
 
-Nome | Time | Projeção
-Nome | Time | Projeção"></textarea>
-    <p class="muted">Cada confronto são 2 linhas. Separe os confrontos com uma linha em branco.
-      ${state.pendingWeek ? `Próxima semana já definida para ${state.pendingWeek}.` : ""}</p>
-    <button class="btn" data-schedule>SALVAR CONFRONTOS</button>
-  </section>
-
-  <h2 class="section">Odds da rodada</h2>
-  ${oddsSecao()}
-
-  <h2 class="section">Resultados — ${state.week}</h2>
-  <section class="card pad">
-    <p class="muted">Cole os placares, um por linha, na ordem dos confrontos (ex.: 146.7 94.6).</p>
+  ${bloco("resultados", "Resultados", `
+    <p class="muted">Cole os placares, um por linha, na ordem dos jogos (ex.: 146.7 94.6).</p>
     <textarea id="placaresTexto" placeholder="146.7 94.6"></textarea>
-    <button class="btn" data-aplicar-placares>APLICAR PLACARES</button>
-    <p class="muted">Ou digite direto:</p>
+    <button class="btn btn-largo" data-aplicar-placares>APLICAR PLACARES</button>
+    <p class="muted">Ou digite jogo a jogo:</p>
     ${state.fixtures.map((f) => `
       <div class="row">
         <span>${f.a} x ${f.b}</span>
         <input class="score" type="number" min="0" data-fid="${f.id}" data-side="a" value="${f.result?.a ?? ""}">
         <input class="score" type="number" min="0" data-fid="${f.id}" data-side="b" value="${f.result?.b ?? ""}">
       </div>`).join("")}
-    <button class="btn" data-save>SALVAR E LIQUIDAR</button>
-    <p class="muted">Se a rodada já tinha placar, corrige e refaz os pagamentos.</p>
-  </section>
+    <button class="btn btn-largo" data-save>SALVAR E LIQUIDAR</button>
+    <p class="muted">Se a rodada já tinha placar, corrige e refaz os pagamentos.</p>`)}
 
-  <h2 class="section">Modo admin</h2>
-  <section class="card pad">
-    <p class="muted">Ajuste de saldo. Aparece para todos, com o motivo.</p>
+  ${bloco("confrontos", "Confrontos e fila", `
+    <div class="row"><select id="target">
+      <option value="fila">Próximas semanas (fila)</option>
+      <option value="current">Esta semana (${state.semana})</option>
+    </select></div>
+    <textarea id="sched" placeholder="W12
+Nome | Time | Projeção
+Nome | Time | Projeção
+
+Nome | Time | Projeção
+Nome | Time | Projeção
+
+W13
+Nome | Time | Projeção
+..."></textarea>
+    <p class="muted">Cada confronto são 2 linhas, separados por uma linha em branco. Na fila, comece cada semana com uma linha "W12", "W13"... e cole quantas quiser de uma vez. Sem essa linha, vale a próxima semana. Subir de novo uma semana substitui a anterior.</p>
+    <button class="btn btn-largo" data-schedule>SALVAR CONFRONTOS</button>
+    ${state.fila.length ? `<br><br><b>Na fila</b>${state.fila.map((x) => `
+      <div class="row"><span>W${x.nfl} · ${x.jogos} jogos</span><button class="pill" data-fila-remover="${x.nfl}">REMOVER</button></div>`).join("")}` : ""}`)}
+
+  ${bloco("odds", "Odds e margens", configSecao() + oddsSecao())}
+
+  ${bloco("jogadores", "Jogadores e saldos", `
+    <b>Ajuste de saldo</b>
+    <p class="muted">Aparece para todos, com o motivo.</p>
     <div class="row"><select id="ajUser">${opcoesJogadores}</select></div>
     <div class="row"><input id="ajVal" type="number" step="1" placeholder="+50 ou -30"></div>
     <div class="row"><input class="pw" id="ajMotivo" placeholder="Motivo curto"></div>
-    <button class="btn" data-ajuste>APLICAR AJUSTE</button>
-  </section>
-  <section class="card pad">
-    <p class="muted">Apostas em aberto. Cancelar devolve o valor apostado.</p>
+    <button class="btn btn-largo" data-ajuste>APLICAR AJUSTE</button>
+    <br><br><b>Apostas em aberto</b>
+    <p class="muted">Cancelar devolve o valor apostado.</p>
     ${apostasAbertas()}
-  </section>
-
-  ${auditoriaSecao()}
-  ${ajusteTabelaSecao()}
-
-  <h2 class="section">Resetar PIN</h2>
-  <section class="card pad">
+    <br><b>Resetar PIN</b>
     <div class="row"><select id="resetSel">${opcoesJogadores}</select></div>
-    <button class="btn" data-reset-pin>RESETAR PIN</button>
-  </section>
+    <button class="btn btn-largo" data-reset-pin>RESETAR PIN</button>`)}
 
-  <h2 class="section">Liquidar rodada anterior</h2>
-  <section class="card pad">
-    <div class="row"><input class="pw" id="prevWeek" placeholder="Ex.: 2026-W43"></div>
-    <textarea id="prevText" placeholder="Confrontos da rodada anterior, no mesmo formato do Confrontos"></textarea>
-    <textarea id="prevScores" placeholder="Um placar por linha, na mesma ordem dos confrontos:
+  ${bloco("tabela", "Ajuste da tabela", ajusteTabelaSecao())}
+
+  ${bloco("ferramentas", "Outras ferramentas", `
+    <b>Número da semana da NFL</b>
+    <p class="muted">Só muda o nome mostrado no app.</p>
+    <div class="row"><input id="nflSemana" type="number" min="1" max="30" value="${state.nfl.atual}"><input id="nflTemporada" type="number" value="${state.nfl.temporada}"></div>
+    <button class="btn btn-largo" data-semana-nfl>SALVAR NOME DA SEMANA</button>
+    <br><br><b>Reabrir confrontos da rodada</b>
+    <p class="muted">Apaga os placares desta semana (só se nenhuma aposta foi liquidada).</p>
+    <button class="btn btn-largo" data-reopen>REABRIR CONFRONTOS</button>
+    <br><br><b>Liquidar rodada anterior</b>
+    <div class="row"><input class="pw" id="prevWeek" placeholder="Ex.: W9"></div>
+    <textarea id="prevText" placeholder="Confrontos da rodada, no mesmo formato de Confrontos"></textarea>
+    <textarea id="prevScores" placeholder="Um placar por linha, na mesma ordem:
 118.5 96.4"></textarea>
-    <p class="muted">Use ponto no lugar da vírgula nos placares.</p>
-    <button class="btn" data-settle-prev>LIQUIDAR RODADA ANTERIOR</button>
-  </section>`;
+    <button class="btn btn-largo" data-settle-prev>LIQUIDAR RODADA ANTERIOR</button>`)}
+
+  ${bloco("auditoria", "Auditoria", auditoriaSecao())}`;
+}
+
+// Congelar a rodada inteira, cada jogo, e fechar handicap/total de cada jogo
+function rodadaCtl() {
+  const congelados = state.congelados || [];
+  const extras = state.extras || [];
+  const jogos = state.fixtures.map((f) => {
+    const vit = congelados.includes(f.id);
+    const ext = extras.includes(f.id);
+    return `
+      <div class="jogo-ctl">
+        <span>${f.aEmote} ${f.a} x ${f.bEmote} ${f.b}${f.result ? ' <span class="muted">· encerrado</span>' : ""}</span>
+        <button class="tog ${vit ? "off" : "on"}" data-congelar="${f.id}" data-valor="${vit ? "0" : "1"}">${vit ? "❄ JOGO" : "JOGO ✓"}</button>
+        <button class="tog ${ext || vit ? "off" : "on"}" data-extras-jogo="${f.id}" data-valor="${ext ? "0" : "1"}">${ext || vit ? "❄ HC/TOT" : "HC/TOT ✓"}</button>
+      </div>`;
+  }).join("");
+  return `
+    <button class="btn btn-largo" data-freeze>${state.frozen ? "LIBERAR TODOS OS JOGOS" : "CONGELAR TODOS OS JOGOS"}</button>
+    <br><br>
+    <button class="btn btn-largo" data-fechar-rodada>${state.rodadaFechada && !state.frozen ? "REABRIR MELHOR E ODIRESTON" : state.frozen ? "MELHOR E ODIRESTON: FECHADOS (TUDO CONGELADO)" : "FECHAR MELHOR E ODIRESTON"}</button>
+    <p class="muted">JOGO congela o jogo inteiro. HC/TOT fecha só handicap e total, e o vencedor continua aberto. Azul = aberto, vermelho = fechado.</p>
+    ${jogos}`;
+}
+
+// Margens em %, desvios em pontos. Campo vazio volta para o padrão.
+function configSecao() {
+  const c = state.config;
+  const pc = (x) => String(+(x * 100).toFixed(2)).replace(".", ",");
+  const campo = (id, rotulo, valor) => `<span>${rotulo}</span><input data-cfg="${id}" inputmode="decimal" value="${valor}">`;
+  return `
+    <b>Configuração</b>
+    <div class="cfg">
+      ${campo("margemVitoria", "Margem vencedor (%)", pc(c.margemVitoria))}
+      ${campo("margemHandicap", "Margem handicap (%)", pc(c.margemHandicap))}
+      ${campo("margemTotal", "Margem total (%)", pc(c.margemTotal))}
+      ${campo("pOver", "Chance do \"mais de\" no total (%)", pc(c.pOver))}
+      ${campo("margemRodada", "Margem melhor/Odireston (%)", pc(c.margemRodada))}
+      ${campo("tetoRodada", "Odd máxima melhor/Odireston", String(c.tetoRodada).replace(".", ","))}
+      ${campo("sigmaDif", "Desvio da diferença do jogo", String(c.sigmaDif).replace(".", ","))}
+      ${campo("sigmaTime", "Desvio por time", String(c.sigmaTime).replace(".", ","))}
+    </div>
+    <p class="muted">O desvio da diferença define a chance de vitória e as odds do handicap. O desvio por time define melhor/Odireston e as chances da tabela. Campo vazio volta para o padrão.</p>
+    <button class="btn btn-largo" data-config-save>SALVAR CONFIGURAÇÃO</button>
+    <br><br>`;
 }
 
 // Mesma conta do servidor, só para mostrar a odd enquanto a barra é movida
-function invNormalFront(p) {
-  const q = p < 0.5 ? p : 1 - p;
-  const t = Math.sqrt(-2 * Math.log(q));
-  const z = t - (2.515517 + 0.802853 * t + 0.010328 * t * t) /
-    (1 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t);
-  return p < 0.5 ? -z : z;
-}
-
 function oddsPrevia(pInt) {
   const p = pInt / 100;
-  const lim = (x) => Math.min(20, Math.max(1.05, +x.toFixed(2)));
-  const oddDe = (q) => lim(1 / (q * 1.05));
-  const linha = Math.round(-(38 * Math.SQRT2 * invNormalFront(p)) - 0.5) + 0.5;
-  const linhaTxt = Math.abs(linha) > 15 ? "sem handicap" : sinal(linha);
-  return { oddA: oddDe(p), oddB: oddDe(1 - p), linha, linhaTxt };
+  const m = state.config.margemVitoria;
+  const oddDe = (q) => Math.min(50, Math.max(1.05, +(1 / (Math.min(0.99, Math.max(0.01, q)) * (1 + m))).toFixed(2)));
+  return { oddA: oddDe(p), oddB: oddDe(1 - p) };
 }
 
 function oddsSecao() {
-  const congelados = state.congelados || [];
   const val = (manual, v) => (manual ? String(v).replace(".", ",") : "");
   const jogos = state.fixtures.map((f) => {
     const p = f.pA;
     const o = oddsPrevia(p);
-    const travado = congelados.includes(f.id);
     const ta = f.totais.a;
     const tb = f.totais.b;
     return `
       <div class="odd-bloco">
         <div class="row"><b>${f.aEmote} ${f.a} x ${f.bEmote} ${f.b}</b></div>
         <div class="barra-nomes"><span>${f.a}</span><span>${f.b}</span></div>
-        <input type="range" min="35" max="65" value="${p}" data-odd="${f.id}">
-        <div class="muted" data-odd-txt="${f.id}">${p}% · odd ${odd(o.oddA)} · ${100 - p}% · odd ${odd(o.oddB)} · handicap ${o.linhaTxt}</div>
+        <input type="range" min="2" max="98" value="${p}" data-odd="${f.id}">
+        <div class="muted" data-odd-txt="${f.id}">${p}% · odd ${odd(o.oddA)} · ${100 - p}% · odd ${odd(o.oddB)}</div>
         <div class="row">
-          <span class="muted">Vitória: ${f.pManual ? `<b>manual</b> (projeção ${f.pAuto}%)` : "pela projeção"}</span>
+          <span class="muted">Vencedor: ${f.pManual ? `<b>manual</b> (projeção ${f.pAuto}%)` : "pela projeção"}</span>
           ${f.pManual ? `<button class="pill" data-barra-projecao="${f.id}">VOLTAR À PROJEÇÃO</button>` : ""}
         </div>
         <div class="row"><span class="muted">Handicap de ${f.a}</span>
-          <input class="score" data-hc="${f.id}" inputmode="decimal" placeholder="${f.handicapAuto === null ? "sem" : sinal(f.handicapAuto)}" value="${val(f.handicapManual, f.handicap?.linha)}"></div>
+          <input class="score" data-hc="${f.id}" inputmode="decimal" placeholder="${sinal(f.handicap.auto)}" value="${val(f.handicap.manual, f.handicap.linha)}"></div>
         <div class="row"><span class="muted">Total ${f.a}</span>
           <input class="score" data-tot="${f.aId}" inputmode="decimal" placeholder="${num1(ta.auto)}" value="${val(ta.manual, ta.linha)}"></div>
         <div class="row"><span class="muted">Total ${f.b}</span>
           <input class="score" data-tot="${f.bId}" inputmode="decimal" placeholder="${num1(tb.auto)}" value="${val(tb.manual, tb.linha)}"></div>
-        <div class="row">
-          <span class="muted">${f.result ? "encerrado" : travado ? "congelado" : "aberto"}</span>
-          <button class="pill" data-congelar="${f.id}" data-valor="${travado ? "0" : "1"}">${travado ? "LIBERAR JOGO" : "CONGELAR JOGO"}</button>
-        </div>
       </div>`;
   }).join("");
   const rodada = state.rodada.times.slice().sort((x, y) => x.oddMelhor - y.oddMelhor).map((r) => {
@@ -146,16 +187,15 @@ function oddsSecao() {
       </div>`;
   }).join("");
   return `
-  <section class="card pad">
-    <p class="muted">Tudo começa pela projeção. Mexer na barra, ou preencher um campo, vira ajuste manual só daquele mercado. Campo vazio volta para a projeção (o valor da projeção aparece apagado no campo). Apostas já feitas não mudam.</p>
+    <b>Ajustes manuais da semana</b>
+    <p class="muted">Tudo começa pela projeção. Mexer na barra, ou preencher um campo, vira ajuste manual só daquele mercado. Campo vazio volta para a projeção (o valor dela aparece apagado no campo). Apostas já feitas não mudam.</p>
     ${jogos}
     <div class="odd-bloco">
-      <div class="row"><b>Melhor / pior da rodada</b></div>
-      <p class="muted">Odds pela projeção com margem de 12,5% e teto de 301. Colunas: melhor · pior.</p>
+      <div class="row"><b>Melhor / Odireston da rodada</b></div>
+      <p class="muted">Colunas: melhor · Odireston.</p>
       ${rodada}
     </div>
-    <button class="btn" data-odds-save>SALVAR ODDS</button>
-  </section>`;
+    <button class="btn btn-largo" data-odds-save>SALVAR ODDS</button>`;
 }
 
 function apostasAbertas() {
@@ -178,24 +218,21 @@ function auditoriaSecao() {
     ? a.faltando.map((f) => `<div class="leg"><span>${f}</span></div>`).join("")
     : `<p class="muted">Todos os jogos da semana atual têm placar.</p>`;
   const abertas = a.abertasAntigas.length
-    ? a.abertasAntigas.map((x) => `<div class="leg"><span>${x.nome}</span><span class="muted">${x.n} aposta(s) de ${x.week}</span></div>`).join("")
+    ? a.abertasAntigas.map((x) => `<div class="leg"><span>${x.nome}</span><span class="muted">${x.n} aposta(s) de ${rotulo(x.week)}</span></div>`).join("")
     : `<p class="muted">Nenhuma aposta aberta de semanas anteriores.</p>`;
   const semanas = a.semanas.length
     ? a.semanas.map((s) => `
-        <div class="row"><b>${s.week}</b></div>
+        <div class="row"><b>${rotulo(s.week)}</b></div>
         ${s.jogos.map((j) => `<div class="leg"><span>${j.a} ${j.pa} x ${j.pb} ${j.b}</span><span class="muted">venceu ${j.vencedor}</span></div>`).join("")}`).join("")
     : `<p class="muted">Nenhuma semana lançada.</p>`;
   return `
-  <h2 class="section">Auditoria</h2>
-  <section class="card pad">
     <p class="muted">Confira os placares de cada semana. Esta tela só mostra, não altera nada.</p>
     <b>Faltando na semana atual</b>
     ${faltando}
     <br><b>Apostas abertas de semanas anteriores</b>
     ${abertas}
     <br><b>Semanas lançadas</b>
-    ${semanas}
-  </section>`;
+    ${semanas}`;
 }
 
 function ajusteTabelaSecao() {
@@ -205,13 +242,10 @@ function ajusteTabelaSecao() {
     return `<div class="leg"><span>${nome}</span><span class="muted">V ${aj.w} · D ${aj.l} · PF ${aj.pf} · PA ${aj.pa}</span></div>`;
   }).join("");
   return `
-  <h2 class="section">Ajuste da tabela</h2>
-  <section class="card pad">
     <p class="muted">Soma V, D, PF e PA por cima do histórico. Não mexe em apostas nem em saldos. Aparece como "ajustado" para todos. Para zerar, aplique tudo em 0.</p>
     <div class="row"><select id="atTime">${opcoes}</select></div>
     <div class="row"><input id="atW" type="number" placeholder="V (+ ou -)"><input id="atL" type="number" placeholder="D (+ ou -)"></div>
     <div class="row"><input id="atPF" type="number" step="0.1" placeholder="PF (+ ou -)"><input id="atPA" type="number" step="0.1" placeholder="PA (+ ou -)"></div>
     <button class="btn" data-ajuste-tabela>APLICAR AJUSTE</button>
-    ${ajustados ? `<br><br><b>Ajustes ativos</b>${ajustados}` : ""}
-  </section>`;
+    ${ajustados ? `<br><br><b>Ajustes ativos</b>${ajustados}` : ""}`;
 }

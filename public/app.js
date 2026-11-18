@@ -23,6 +23,15 @@ const isSel = (id, market, side, team) =>
     (l) => l.fixtureId === id && l.market === market && l.side === side && (l.team ?? null) === (team ?? null)
   ) ? "sel" : "";
 const me = () => state?.players.find((p) => p.id === session?.user);
+// Convidado: só visualiza (não aposta, não desafia, não entra no Admin)
+const convidado = () => !!session?.guest;
+// "2026-W47" vira "W11 2026" (semana da NFL)
+function rotulo(w) {
+  if (!w || !state?.nfl || !/^\d{4}-W\d{1,2}$/.test(w)) return w ?? "";
+  const idx = (x) => { const [y, n] = x.split("-W").map(Number); return y * 52 + n - 1; };
+  const n = state.nfl.semana + idx(w) - idx(state.nfl.base);
+  return n >= 1 ? `W${n} ${state.nfl.temporada}` : w;
+}
 
 function applyTheme(t) {
   document.documentElement.dataset.theme = t;
@@ -70,6 +79,14 @@ async function login(user, pin) {
   render();
 }
 
+function entrarConvidado() {
+  session = { guest: true };
+  localStorage.setItem("tcfc-session", JSON.stringify(session));
+  slip = [];
+  tab = "mercados";
+  render();
+}
+
 function logout() {
   session = null;
   localStorage.removeItem("tcfc-session");
@@ -82,7 +99,7 @@ function header() {
   return `
   <header class="top">
     <div class="brand"><img src="escudo.png" alt="" class="logo-sm">TOP CARAIO FC</div>
-    ${cur ? `<div class="userbox">${cur.emote} ${cur.name}<b>🪙 ${cur.balance}</b></div>` : ""}
+    ${cur ? `<div class="userbox">${cur.emote} ${cur.name}<b>🪙 ${cur.balance}</b></div>` : convidado() ? `<div class="userbox">👀 Convidado</div>` : ""}
   </header>`;
 }
 
@@ -103,26 +120,24 @@ function tabbar() {
 }
 
 function render() {
-  if (!state) {
-    if (splash) $("#app").innerHTML = splashView();
-    return;
-  }
+  if (!state) return;
   let body;
   if (tab === "admin") body = admin();
   else if (tab === "tabela") body = tabela();
   else if (tab === "mais") body = mais();
   else if (tab === "regras") body = regras();
   else if (!session && (tab === "mercados" || tab === "apostas")) body = loginView();
+  else if (convidado() && tab === "apostas") body = convidadoApostas();
+  else if (convidado() && tab === "admin") body = mais();
   else body = { mercados, apostas, placar, estatisticas }[tab]();
   $("#app").innerHTML =
     header() +
     `<main>${body}</main>` +
-    (session && tab === "mercados" && slip.length ? slipView() : "") +
+    (session && !convidado() && tab === "mercados" && slip.length ? slipView() : "") +
     tabbar() +
     (recibo ? reciboView() : "") +
     (modalNov ? novidadesView() : "") +
-    (sheet ? sheetView() : "") +
-    (splash ? splashView() : "");
+    (sheet ? sheetView() : "");
 }
 
 let toqueX = null;
