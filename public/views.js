@@ -6,7 +6,7 @@ function loginView() {
     <div class="row"><input id="lpin" class="pw" type="password" inputmode="numeric" maxlength="6" placeholder="PIN (4 a 6 números)"></div>
     <button class="btn" data-login style="width:100%">ENTRAR</button>
     <p class="muted">Primeiro acesso: o PIN que você digitar agora fica salvo para os próximos.</p>
-    <button class="pill" data-convidado style="width:100%">👀 ENTRAR COMO CONVIDADO</button>
+    <button class="pill" data-convidado style="width:100%">ENTRAR COMO CONVIDADO</button>
     <p class="muted">Convidado vê tudo, mas não aposta.</p>
     ${loginMsg ? `<p>${loginMsg}</p>` : ""}
   </section>`;
@@ -39,8 +39,8 @@ function mercados() {
   <h2 class="section">Vencedor</h2>
   <section class="card"><div class="grid">
     ${state.fixtures.map((f) => `
-      <button class="odd ${isSel(f.id, "ml", "A")}" data-pick="${f.id}" data-market="ml" data-side="A" ${bloqueado(f)}><span>${f.aEmote} ${f.a}<br><small class="muted">${f.pA}% de chance</small></span><em>${odd(f.oddA)}</em></button>
-      <button class="odd ${isSel(f.id, "ml", "B")}" data-pick="${f.id}" data-market="ml" data-side="B" ${bloqueado(f)}><span>${f.bEmote} ${f.b}<br><small class="muted">${f.pB}% de chance</small></span><em>${odd(f.oddB)}</em></button>`).join("")}
+      <button class="odd ${isSel(f.id, "ml", "A")}" data-pick="${f.id}" data-market="ml" data-side="A" ${bloqueado(f)}><span>${f.aEmote} ${f.a}${simbolo(f.aId)}<br><small class="muted">${f.pA}% de chance</small></span><em>${odd(f.oddA)}</em></button>
+      <button class="odd ${isSel(f.id, "ml", "B")}" data-pick="${f.id}" data-market="ml" data-side="B" ${bloqueado(f)}><span>${f.bEmote} ${f.b}${simbolo(f.bId)}<br><small class="muted">${f.pB}% de chance</small></span><em>${odd(f.oddB)}</em></button>`).join("")}
   </div></section>
   <h2 class="section">Handicap</h2>
   <section class="card"><div class="grid">
@@ -94,6 +94,7 @@ function rodadaSecao(market) {
 const isSelRodada = (market, id) => (slip.some((l) => l.market === market && l.team === id) ? "sel" : "");
 
 function legOdd(l) {
+  if (FUTURAS.includes(l.market)) return state.futuras.mercados[l.market].times.find((x) => x.id === l.team)?.odd;
   if (l.market === "mb" || l.market === "mp") {
     const r = state.rodada.times.find((x) => x.id === l.team);
     return l.market === "mb" ? r.oddMelhor : r.oddPior;
@@ -105,6 +106,11 @@ function legOdd(l) {
 }
 
 function legLabel(l) {
+  if (FUTURAS.includes(l.market)) {
+    const p = timeDe(l.team);
+    const txt = { fc: "campeão", fps: "vai ao playoff", fpn: "fora do playoff", fl: "lanterna" }[l.market];
+    return `${p.emote} ${p.team} ${txt}`;
+  }
   if (l.market === "mb" || l.market === "mp") {
     const p = timeDe(l.team);
     return `${p.emote} ${p.team} ${l.market === "mb" ? "melhor" : "Odireston"} da rodada`;
@@ -214,6 +220,49 @@ function apostas() {
 
 const MEDALHA = { 1: "🥇", 2: "🥈", 3: "🥉" };
 
+// 👑 maior pontuação e Troféu Odireston menor pontuação da semana passada (até a semana atual fechar)
+function simbolo(id) {
+  const d = state.destaques;
+  if (!d) return "";
+  let s = "";
+  if (d.melhor.includes(id)) s += ' <span class="destaque-ico" title="Maior pontuação da ' + d.semana + '">👑</span>';
+  if (d.pior.includes(id)) s += ' <img class="trofeu-mini" src="odireston-mini.webp" alt="Troféu Odireston" title="Troféu Odireston da ' + d.semana + '">';
+  return s;
+}
+
+// Tela cheia para o dono da coroa ou do troféu, uma vez por semana
+function destaquePendente() {
+  const d = state?.destaques;
+  const u = session?.user;
+  if (!d || !u || convidado()) return null;
+  for (const tipo of ["melhor", "pior"]) {
+    if (!d[tipo].includes(u)) continue;
+    const chave = `tcfc-destaque-${d.week}-${tipo}`;
+    let visto = false;
+    try { visto = !!localStorage.getItem(chave); } catch {}
+    if (!visto) return { tipo, chave };
+  }
+  return null;
+}
+
+function destaqueView(p) {
+  const d = state.destaques;
+  const eu = me();
+  const pts = String(p.tipo === "melhor" ? d.ptsMelhor : d.ptsPior).replace(".", ",");
+  const coroa = p.tipo === "melhor";
+  return `
+  <div class="destaque-wrap ${coroa ? "coroa" : "odireston"}">
+    <div class="destaque">
+      ${coroa ? '<div class="destaque-coroa">👑</div>' : '<img class="destaque-trofeu" src="odireston.webp" alt="Troféu Odireston">'}
+      <h2>${coroa ? "MAIOR PONTUAÇÃO" : "TROFÉU ODIRESTON"} DA ${d.semana.split(" ")[0]}</h2>
+      <p class="destaque-time">${eu.emote} ${eu.team}</p>
+      <p class="destaque-pts">${pts}</p>
+      <p class="muted">${coroa ? "A coroa é sua" : "O troféu fica com você"} até a ${state.semana.split(" ")[0]} fechar.</p>
+      <button class="btn btn-largo" data-destaque-ok="${p.chave}">${coroa ? "VALEU" : "ACEITO"}</button>
+    </div>
+  </div>`;
+}
+
 // Na tabela só os ícones; tocando neles abre a janela com os anos
 function medalhasDe(r) {
   if (!r.medalhas?.length) return "";
@@ -242,8 +291,8 @@ function tabela() {
     // Tracejado em cima da primeira linha fora do playoff (fica logo abaixo do último classificado)
     return `
     <tr class="${i === (state.playoffSpots ?? 6) ? "corte" : ""}">
-      <td>${i + 1}</td>
-      <td>${r.emote} ${r.team} ${medalhasDe(r)}${r.ajustado ? ' <span class="muted">· ajustado</span>' : ""}<div class="muted">${r.name}</div></td>
+      <td>${i === state.standings.length - 1 ? '<span title="Lanterna">🔦</span>' : i + 1}</td>
+      <td>${r.emote} ${r.team}${simbolo(r.id)} ${medalhasDe(r)}${r.ajustado ? ' <span class="muted">· ajustado</span>' : ""}<div class="muted">${r.name}</div></td>
       <td class="num">${r.w}-${r.l}</td>
       <td class="num">${num1(r.pf)}</td>
       <td class="num">${num1(r.pa)}</td>
@@ -266,7 +315,7 @@ function tabela() {
 function placar() {
   const rows = [...state.players]
     .sort((a, b) => b.balance - a.balance)
-    .map((p, i) => `<tr><td>${i + 1}</td><td>${p.emote} ${p.name}<div class="muted">${p.team}</div></td><td class="num">🪙 ${p.balance}</td></tr>`)
+    .map((p, i) => `<tr><td>${i + 1}</td><td>${p.emote} ${p.name}${simbolo(p.id)}<div class="muted">${p.team}</div></td><td class="num">🪙 ${p.balance}</td></tr>`)
     .join("");
   const mine = me();
   const emoteForm = mine
@@ -296,6 +345,7 @@ function regras() {
     Pontos por equipe: a linha é a projeção arredondada para baixo, mais 0,5. Mais de paga ${odd(1 / (c.pOver * (1 + c.margemTotal)))} e menos de paga ${odd(1 / ((1 - c.pOver) * (1 + c.margemTotal)))}.<br>
     Melhor e Odireston da rodada: aposte em quem fará a maior ou a menor pontuação entre todos os times. Uma aposta em cada por semana, só simples, e vale apostar em você mesmo. Margem: ${pc(c.margemRodada)}, odd máxima ${odd(c.tetoRodada)}. Em caso de empate, todos os empatados contam como vencedores.<br>
     O admin pode congelar um jogo inteiro, ou fechar só o handicap e o total de um jogo, deixando o vencedor aberto.<br>
+    Futuras: campeão, playoff (sim ou não) e lanterna. Odds pela média de pontos da temporada, recorde atual e confrontos restantes, recalculadas a cada semana. Margem: ${pc(c.margemFuturas)}, odd máxima ${odd(c.tetoFuturas)}. A odd fica travada na aposta. Playoff e lanterna pagam ao fim da W14, campeão depois da final.<br>
     Múltipla: escolha 2 ou mais seleções, uma por confronto (melhor e Odireston da rodada não entram). A odd total é a multiplicação das odds. Se uma perna perder, a múltipla perde.<br>
     Quando o admin lança o placar final, as apostas são liquidadas.<br>
     Em caso de empate no placar, o lado A vence.<br>
@@ -459,7 +509,7 @@ function sheetView() {
         <div class="muted" id="bOdds">Odd ${odd(100 / s)} · Odd ${odd(100 / (100 - s))}</div>
         <details class="info-barra">
           <summary>ⓘ O que é a barra?</summary>
-          <p>A barra divide 100% entre os dois lados. Quanto mais ela pende para um lado, menor a odd dele e maior a do outro.
+          <p>A barra divide 100% entre os dois lados.
           No meio, as duas odds são 2,00. Com 60% para um lado, ele tem odd 1,67 e o outro, 2,50.
           O mediador paga a diferença: ganha quando o favorito vence e paga quando o azarão vence.
           A barra começa na sugestão da projeção, e você pode mudar. Adversário e mediador precisam aceitar a mesma barra.</p>
@@ -526,45 +576,169 @@ function estatisticas() {
   ${cards}
   <h2 class="section">Quem aposta em quem</h2>
   <section class="card" style="overflow-x:auto"><table class="tabela-matriz">${cab}${linhas}</table></section>
-  <p class="muted">Linhas: quem apostou. Colunas: em quem. Valores em GC, a favor do jogador da coluna. Os emotes identificam cada jogador nos cards acima.</p>`;
+  <p class="muted">Linhas: quem apostou. Colunas: em quem. Valores em GC, a favor do jogador da coluna.</p>`;
 }
 
 function splashView() {
-  return `<div class="splash"><div class="splash-brilho"></div><div class="splash-cai"><div class="splash-gira"><img src="escudo.png" alt=""></div></div><p>TOP CARAIO FC</p><span class="splash-linha"></span></div>`;
+  return `<div class="splash"><div class="splash-cai"><div class="splash-gira"><img src="escudo.png" alt=""></div></div><p>TOP CARAIO FC</p><span class="splash-linha"></span></div>`;
 }
 
 
-// Bilhete como imagem, para compartilhar
+// Bilhete como imagem, para compartilhar (13.2: visual vintage, sem cortar nomes)
 function gerarBilhete(r) {
   return new Promise((resolve) => {
-    const c = document.createElement("canvas");
-    c.width = 720;
-    c.height = 960;
-    const x = c.getContext("2d");
-    x.fillStyle = "#F4EBD0";
-    x.fillRect(0, 0, 720, 960);
-    x.fillStyle = "#2B2116";
-    x.font = "bold 40px 'Courier New', monospace";
-    x.fillText("BILHETE Nº " + String(r.num).padStart(4, "0"), 40, 90);
-    x.font = "26px 'Courier New', monospace";
-    x.fillText("Rodada " + r.week, 40, 130);
-    let y = 185;
-    x.fillText("-".repeat(32), 40, y);
-    y += 50;
-    for (const l of r.legs) {
-      x.fillText(String(l.label).slice(0, 26), 40, y);
-      x.fillText(odd(l.odd), 580, y);
-      y += 42;
+    const W = 720;
+    const M = 44; // margem
+    const R = W - M; // coluna da direita (valores alinhados por aqui)
+    const PAPEL = "#F3E6C4";
+    const TINTA = "#3A2A1E";
+    const SERIE = "#A8322A";
+    const FONTE = "'Courier New', Courier, monospace";
+    const medida = document.createElement("canvas").getContext("2d");
+
+    // Aleatório fixo por bilhete: a mesma aposta gera sempre a mesma imagem
+    let semente = (Number(r.num) || 1) * 9301 + 49297;
+    const rnd = () => ((semente = (semente * 9301 + 49297) % 233280) / 233280);
+
+    // Separa em caracteres visíveis (emoji composto fica inteiro)
+    const letras = (t) =>
+      typeof Intl !== "undefined" && Intl.Segmenter
+        ? [...new Intl.Segmenter("pt", { granularity: "grapheme" }).segment(t)].map((g) => g.segment)
+        : Array.from(t);
+    const ehEmoji = (g) => /\p{Extended_Pictographic}/u.test(g);
+
+    // Quebra o nome da seleção em linhas que cabem na largura
+    function quebra(texto, larg, fonte) {
+      medida.font = fonte;
+      const palavras = String(texto).split(" ");
+      const linhas = [];
+      let atual = "";
+      for (const w of palavras) {
+        const tenta = atual ? atual + " " + w : w;
+        if (medida.measureText(tenta).width <= larg || !atual) atual = tenta;
+        else { linhas.push(atual); atual = w; }
+      }
+      if (atual) linhas.push(atual);
+      return linhas;
     }
-    y += 10;
-    x.fillText("-".repeat(32), 40, y);
-    y += 50;
-    x.fillText("Apostado", 40, y); x.fillText(r.stake + " GC", 500, y); y += 42;
-    x.fillText("Odd total", 40, y); x.fillText(odd(r.odd), 580, y); y += 42;
-    x.font = "bold 30px 'Courier New', monospace";
-    x.fillText("Retorno", 40, y); x.fillText(r.retorno + " GC", 480, y);
-    x.font = "22px 'Courier New', monospace";
-    x.fillText(r.legs.length > 1 ? "Múltipla" : "Aposta simples", 40, 900);
+
+    const fNormal = `26px ${FONTE}`;
+    const fOdd = `bold 26px ${FONTE}`;
+    medida.font = fOdd;
+    const largOdd = Math.max(...r.legs.map((l) => medida.measureText(odd(l.odd)).width), 60);
+    const larguraNome = R - M - largOdd - 40;
+    // Linhas de continuação começam alinhadas ao texto, depois do emoji do time
+    const recuoDe = (t) => {
+      const g = letras(String(t))[0] ?? "";
+      medida.font = fNormal;
+      return ehEmoji(g) ? medida.measureText(g + " ").width : 0;
+    };
+    const pernas = r.legs.map((l) => {
+      const recuo = recuoDe(l.label);
+      return { linhas: quebra(l.label, larguraNome - recuo, fNormal), odd: odd(l.odd), recuo };
+    });
+
+    // Altura conforme o conteúdo
+    const L = 38; // altura de linha
+    const multipla = r.legs.length > 1;
+    let H = 200 + pernas.reduce((s, p) => s + p.linhas.length * L + 10, 0) + 40 + (multipla ? 3 : 2) * 44 + 30 + 190;
+    H = Math.max(H, 640);
+
+    const c = document.createElement("canvas");
+    c.width = W;
+    c.height = H;
+    const x = c.getContext("2d");
+
+    // Papel: creme amarelado, grão leve (~3,5%) e bordas escurecidas de leve (~3,5%)
+    x.fillStyle = PAPEL;
+    x.fillRect(0, 0, W, H);
+    const px = x.getImageData(0, 0, W, H);
+    for (let i = 0; i < px.data.length; i += 4) {
+      const n = (rnd() - 0.5) * 18; // ±9 em 255 ≈ 3,5%
+      px.data[i] += n; px.data[i + 1] += n; px.data[i + 2] += n;
+    }
+    x.putImageData(px, 0, 0);
+    const vin = x.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.45, W / 2, H / 2, Math.max(W, H) * 0.75);
+    vin.addColorStop(0, "rgba(70, 45, 15, 0)");
+    vin.addColorStop(1, "rgba(70, 45, 15, 0.035)");
+    x.fillStyle = vin;
+    x.fillRect(0, 0, W, H);
+
+    // Picote no topo e na base, como bilhete destacado do talão
+    x.fillStyle = "rgba(90, 60, 25, 0.13)";
+    for (let cx = 14; cx < W; cx += 24) {
+      for (const cy of [16, H - 16]) {
+        x.beginPath();
+        x.arc(cx, cy, 5, 0, Math.PI * 2);
+        x.fill();
+      }
+    }
+
+    // Escreve letra por letra; a tinta varia de 92% a 100% (fita de máquina de escrever)
+    function escreve(texto, x0, y, fonte, cor = TINTA, varia = true) {
+      x.font = fonte;
+      let cx = x0;
+      for (const g of letras(String(texto))) {
+        x.globalAlpha = varia && !ehEmoji(g) ? 0.92 + rnd() * 0.08 : 1;
+        x.fillStyle = cor;
+        x.fillText(g, cx, y);
+        cx += x.measureText(g).width;
+      }
+      x.globalAlpha = 1;
+      return cx;
+    }
+    function direita(texto, y, fonte, cor = TINTA) {
+      x.font = fonte;
+      x.globalAlpha = 1;
+      x.fillStyle = cor;
+      x.fillText(texto, R - x.measureText(texto).width, y);
+    }
+    function tracejado(y) {
+      x.font = `26px ${FONTE}`;
+      x.globalAlpha = 0.55;
+      x.fillStyle = TINTA;
+      let cx = M;
+      while (cx < R - 10) { x.fillText("-", cx, y); cx += 22; }
+      x.globalAlpha = 1;
+    }
+
+    // Cabeçalho: número de série em vermelho, tinta cheia
+    const fimB = escreve("BILHETE ", M, 92, `bold 40px ${FONTE}`);
+    x.font = `bold 40px ${FONTE}`;
+    x.fillStyle = SERIE;
+    x.fillText("Nº " + String(r.num).padStart(4, "0"), fimB, 92);
+    escreve("Rodada " + r.week, M, 132, `24px ${FONTE}`);
+    let y = 180;
+    tracejado(y);
+    y += 52;
+
+    // Seleções: nome completo (quebra linha), pontilhado guia até a odd
+    for (const p of pernas) {
+      p.linhas.forEach((linha, i) => {
+        const fim = escreve(linha, M + (i ? p.recuo : 0), y, fNormal);
+        if (i === p.linhas.length - 1) {
+          x.font = fOdd;
+          const iniOdd = R - x.measureText(p.odd).width;
+          x.font = fNormal;
+          x.globalAlpha = 0.6;
+          x.fillStyle = TINTA;
+          for (let cx = fim + 10; cx < iniOdd - 22; cx += 12) x.fillText(".", cx, y);
+          x.globalAlpha = 1;
+          direita(p.odd, y, fOdd);
+        }
+        y += L;
+      });
+      y += 10;
+    }
+    y += 4;
+    tracejado(y);
+    y += 52;
+
+    // Totais: "Odd total" só aparece na múltipla
+    escreve("Apostado", M, y, fNormal); direita(r.stake + " GC", y, fNormal); y += 44;
+    if (multipla) { escreve("Odd total", M, y, fNormal); direita(odd(r.odd), y, fOdd); y += 44; }
+    escreve("RETORNO", M, y + 4, `bold 32px ${FONTE}`); direita(r.retorno + " GC", y + 4, `bold 32px ${FONTE}`);
+
     let feito = false;
     const fim = () => {
       if (feito) return;
@@ -573,7 +747,9 @@ function gerarBilhete(r) {
     };
     const img = new Image();
     img.onload = () => {
-      x.drawImage(img, 500, 780, 180, 180);
+      x.globalAlpha = 0.95;
+      x.drawImage(img, W - M - 150, H - 40 - 150, 150, 150);
+      x.globalAlpha = 1;
       fim();
     };
     img.onerror = fim;
@@ -597,4 +773,45 @@ async function compartilharBilhete() {
   a.href = URL.createObjectURL(blob);
   a.download = file.name;
   a.click();
+}
+
+// ---------- Aba Futuras ----------
+const FUTURAS = ["fc", "fps", "fpn", "fl"];
+const pctF = (p) => (p < 0.001 ? "<0,1%" : String(+(p * 100).toFixed(1)).replace(".", ",") + "%");
+
+function futuras() {
+  const F = state.futuras;
+  const bloqueia = (m) => (F.mercados[m].fechado || convidado() ? "disabled" : "");
+  const aviso = (m) => (F.mercados[m].fechado ? `<p class="muted">${F.mercados[m].fechado}.</p>` : "");
+  const sel = (m, id) => (slip.some((l) => l.market === m && l.team === id) ? "sel" : "");
+  const lista = (m) =>
+    F.mercados[m].times.map((t) => {
+      const p = timeDe(t.id);
+      return `<button class="odd ${sel(m, t.id)}" data-pick="fut" data-market="${m}" data-side="${m}" data-team="${t.id}" ${bloqueia(m)}><span>${p.emote} ${p.team}<br><small class="muted">${pctF(t.p)} de chance</small></span><em>${odd(t.odd)}</em></button>`;
+    }).join("") || '<p class="muted pad">Sem seleções abertas.</p>';
+  // Playoff: uma linha por time, com Sim e Não lado a lado
+  const ps = Object.fromEntries(F.mercados.fps.times.map((t) => [t.id, t]));
+  const pn = Object.fromEntries(F.mercados.fpn.times.map((t) => [t.id, t]));
+  const chanceP = (id) => (ps[id] ? ps[id].p : 1 - (pn[id]?.p ?? 0));
+  const ids = [...new Set([...F.mercados.fps.times, ...F.mercados.fpn.times].map((t) => t.id))]
+    .sort((a, b) => chanceP(b) - chanceP(a));
+  const cel = (m, id, t, rot) => t
+    ? `<button class="odd ${sel(m, id)}" data-pick="fut" data-market="${m}" data-side="${m}" data-team="${id}" ${bloqueia(m)}><span>${rot}</span><em>${odd(t.odd)}</em></button>`
+    : `<div class="odd vazio"><span>${rot}</span></div>`;
+  const playoff = ids.map((id) => {
+    const p = timeDe(id);
+    return `<div class="fut-linha"><div class="fut-nome">${p.emote} ${p.team}<small class="muted">${pctF(chanceP(id))} de chance</small></div>${cel("fps", id, ps[id], "Sim")}${cel("fpn", id, pn[id], "Não")}</div>`;
+  }).join("");
+  return `
+  <h2 class="section">Futuras</h2>
+  <p class="muted">Apostas na temporada. A odd fica travada na hora da aposta e é paga no fim: playoff e lanterna ao fim da W14, campeão depois da final. Só aposta simples.</p>
+  <h2 class="section">Campeão</h2>
+  ${F.campeao ? `<p class="muted">Campeão: <b>${timeDe(F.campeao)?.team ?? F.campeao}</b>.</p>` : aviso("fc")}
+  <section class="card"><div class="grid um">${lista("fc")}</div></section>
+  <h2 class="section">Playoff</h2>
+  ${aviso("fps")}
+  <section class="card pad">${playoff || '<p class="muted">Sem seleções abertas.</p>'}</section>
+  <h2 class="section">Lanterna</h2>
+  ${aviso("fl")}
+  <section class="card"><div class="grid um">${lista("fl")}</div></section>`;
 }

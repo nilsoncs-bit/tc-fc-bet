@@ -99,12 +99,13 @@ function header() {
   return `
   <header class="top">
     <div class="brand"><img src="escudo.png" alt="" class="logo-sm">TOP CARAIO FC</div>
-    ${cur ? `<div class="userbox">${cur.emote} ${cur.name}<b>🪙 ${cur.balance}</b></div>` : convidado() ? `<div class="userbox">👀 Convidado</div>` : ""}
+    ${cur ? `<div class="userbox">${cur.emote} ${cur.name}${simbolo(cur.id)}<b>🪙 ${cur.balance}</b></div>` : convidado() ? `<div class="userbox">Convidado</div>` : ""}
   </header>`;
 }
 
 const TABS = [
   ["mercados", "🏟️", "Mercados"],
+  ["futuras", "🔮", "Futuras"],
   ["apostas", "📜", "Apostas"],
   ["tabela", "🏛️", "Tabela"],
   ["placar", "🛡️", "Placar"],
@@ -126,6 +127,7 @@ function render() {
   else if (tab === "tabela") body = tabela();
   else if (tab === "mais") body = mais();
   else if (tab === "regras") body = regras();
+  else if (tab === "futuras") body = futuras();
   else if (!session && (tab === "mercados" || tab === "apostas")) body = loginView();
   else if (convidado() && tab === "apostas") body = convidadoApostas();
   else if (convidado() && tab === "admin") body = mais();
@@ -133,11 +135,12 @@ function render() {
   $("#app").innerHTML =
     header() +
     `<main>${body}</main>` +
-    (session && !convidado() && tab === "mercados" && slip.length ? slipView() : "") +
+    (session && !convidado() && (tab === "mercados" || tab === "futuras") && slip.length ? slipView() : "") +
     tabbar() +
     (recibo ? reciboView() : "") +
     (modalNov ? novidadesView() : "") +
-    (sheet ? sheetView() : "");
+    (sheet ? sheetView() : "") +
+    (destaquePendente() && !modalNov ? destaqueView(destaquePendente()) : "");
 }
 
 let toqueX = null;

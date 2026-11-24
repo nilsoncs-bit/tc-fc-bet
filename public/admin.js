@@ -35,6 +35,7 @@ function admin() {
     <p class="muted">Cole os placares, um por linha, na ordem dos jogos (ex.: 146.7 94.6).</p>
     <textarea id="placaresTexto" placeholder="146.7 94.6"></textarea>
     <button class="btn btn-largo" data-aplicar-placares>APLICAR PLACARES</button>
+    <button class="pill btn-largo" data-copiar-placares>COPIAR PLACARES DA RODADA</button>
     <p class="muted">Ou digite jogo a jogo:</p>
     ${state.fixtures.map((f) => `
       <div class="row">
@@ -46,6 +47,8 @@ function admin() {
     <p class="muted">Se a rodada já tinha placar, corrige e refaz os pagamentos.</p>`)}
 
   ${bloco("confrontos", "Confrontos e fila", `
+    <button class="pill btn-largo" data-copiar-confrontos>COPIAR CONFRONTOS DA RODADA</button>
+    <br><br>
     <div class="row"><select id="target">
       <option value="fila">Próximas semanas (fila)</option>
       <option value="current">Esta semana (${state.semana})</option>
@@ -66,6 +69,10 @@ Nome | Time | Projeção
       <div class="row"><span>W${x.nfl} · ${x.jogos} jogos</span><button class="pill" data-fila-remover="${x.nfl}">REMOVER</button></div>`).join("")}` : ""}`)}
 
   ${bloco("odds", "Odds e margens", configSecao() + oddsSecao())}
+
+  ${bloco("futuras", "Futuras", futurasAdmin())}
+
+  ${bloco("duelos", "1x1 em aberto", duelosAbertos())}
 
   ${bloco("jogadores", "Jogadores e saldos", `
     <b>Ajuste de saldo</b>
@@ -119,7 +126,7 @@ function rodadaCtl() {
     <button class="btn btn-largo" data-freeze>${state.frozen ? "LIBERAR TODOS OS JOGOS" : "CONGELAR TODOS OS JOGOS"}</button>
     <br><br>
     <button class="btn btn-largo" data-fechar-rodada>${state.rodadaFechada && !state.frozen ? "REABRIR MELHOR E ODIRESTON" : state.frozen ? "MELHOR E ODIRESTON: FECHADOS (TUDO CONGELADO)" : "FECHAR MELHOR E ODIRESTON"}</button>
-    <p class="muted">JOGO congela o jogo inteiro. HC/TOT fecha só handicap e total, e o vencedor continua aberto. Azul = aberto, vermelho = fechado.</p>
+    <p class="muted">JOGO congela o jogo inteiro. HC/TOT fecha só handicap e total, e o vencedor continua aberto.</p>
     ${jogos}`;
 }
 
@@ -139,6 +146,8 @@ function configSecao() {
       ${campo("tetoRodada", "Odd máxima melhor/Odireston", String(c.tetoRodada).replace(".", ","))}
       ${campo("sigmaDif", "Desvio da diferença do jogo", String(c.sigmaDif).replace(".", ","))}
       ${campo("sigmaTime", "Desvio por time", String(c.sigmaTime).replace(".", ","))}
+      ${campo("margemFuturas", "Margem Futuras (%)", pc(c.margemFuturas))}
+      ${campo("tetoFuturas", "Odd máxima Futuras", String(c.tetoFuturas).replace(".", ","))}
     </div>
     <p class="muted">O desvio da diferença define a chance de vitória e as odds do handicap. O desvio por time define melhor/Odireston e as chances da tabela. Campo vazio volta para o padrão.</p>
     <button class="btn btn-largo" data-config-save>SALVAR CONFIGURAÇÃO</button>
@@ -188,14 +197,79 @@ function oddsSecao() {
   }).join("");
   return `
     <b>Ajustes manuais da semana</b>
-    <p class="muted">Tudo começa pela projeção. Mexer na barra, ou preencher um campo, vira ajuste manual só daquele mercado. Campo vazio volta para a projeção (o valor dela aparece apagado no campo). Apostas já feitas não mudam.</p>
+    <p class="muted">Tudo começa pela projeção. Mexer na barra, ou preencher um campo, vira ajuste manual só daquele mercado. Campo vazio volta para a projeção. Apostas já feitas não mudam.</p>
     ${jogos}
     <div class="odd-bloco">
       <div class="row"><b>Melhor / Odireston da rodada</b></div>
-      <p class="muted">Colunas: melhor · Odireston.</p>
+      <div class="row rodada-cab"><span></span><b class="score">Melhor</b><b class="score">Odireston</b></div>
       ${rodada}
     </div>
     <button class="btn btn-largo" data-odds-save>SALVAR ODDS</button>`;
+}
+
+// Futuras: suspender mercado, odd manual por time, recalcular e definir o campeão
+function futurasAdmin() {
+  const F = state.futuras;
+  const val = (t) => (t.manual ? String(t.odd).replace(".", ",") : "");
+  const mercado = (m) => {
+    const M = F.mercados[m];
+    const susp = !!F.suspensos[m];
+    return `
+      <div class="odd-bloco">
+        <div class="row"><b>${M.nome}</b>
+          <button class="tog ${susp ? "off" : "on"}" data-fut-suspender="${m}" data-valor="${susp ? "0" : "1"}">${susp ? "❄ SUSPENSO" : "ABERTO ✓"}</button></div>
+        ${M.times.map((t) => {
+          const p = state.players.find((x) => x.id === t.id);
+          return `<div class="row"><span>${p.emote} ${p.team} <span class="muted">${(t.p * 100).toFixed(1).replace(".", ",")}%</span></span>
+            <input class="score" data-fut="${m}" data-fut-id="${t.id}" inputmode="decimal" placeholder="${t.auto ? odd(t.auto) : "—"}" value="${val(t)}"></div>`;
+        }).join("")}
+      </div>`;
+  };
+  const opcoes = state.players.map((p) => `<option value="${p.id}" ${F.campeao === p.id ? "selected" : ""}>${p.emote} ${p.team}</option>`).join("");
+  return `
+    <p class="muted">As odds são recalculadas a cada FECHAR SEMANA. Campo preenchido vira odd manual, vazio volta para a calculada.</p>
+    ${["fc", "fps", "fpn", "fl"].map(mercado).join("")}
+    <button class="btn btn-largo" data-fut-salvar>SALVAR ODDS DAS FUTURAS</button>
+    <br><br><button class="pill btn-largo" data-fut-recalcular>RECALCULAR AGORA</button>
+    <br><br><b>Campeão</b>
+    <p class="muted">Ao definir, as apostas de campeão são pagas.</p>
+    <div class="row"><select id="futCampeao"><option value="">— nenhum —</option>${opcoes}</select></div>
+    <button class="btn btn-largo" data-fut-campeao>DEFINIR CAMPEÃO</button>`;
+}
+
+// 1x1 pendentes ou ativos: cancelar devolve o dinheiro de todos os envolvidos
+function duelosAbertos() {
+  const abertos = state.duels.filter((d) => d.status === "pendente" || d.status === "ativo");
+  if (!abertos.length) return '<p class="muted">Nenhum 1x1 em aberto.</p>';
+  return abertos.map((d) => `
+    <div class="row"><span>${d.emoteA} ${d.nomeA} x ${d.emoteB} ${d.nomeB}<div class="muted">${rotulo(d.week)} · ${d.valor} GC · ${d.status}${d.apostas.length ? ` · ${d.apostas.length} espectador(es)` : ""}</div></span>
+      <button class="pill" data-duel-admin-cancelar="${d.id}">CANCELAR E DEVOLVER</button></div>`).join("") +
+    (abertos.length > 1 ? '<br><button class="btn btn-largo" data-duel-admin-cancelar="todos">CANCELAR TODOS</button>' : "");
+}
+
+// Texto no mesmo formato que se cola em Confrontos
+function textoConfrontos() {
+  const linha = (id) => {
+    const p = state.players.find((x) => x.id === id);
+    return `${p.name} | ${p.team} | ${String(p.projection).replace(".", ",")}`;
+  };
+  return state.fixtures.map((f) => `${linha(f.aId)}\n${linha(f.bId)}`).join("\n\n");
+}
+
+// Um placar por linha, na ordem dos jogos; jogo sem placar fica com a linha vazia
+const textoPlacares = () => state.fixtures.map((f) => (f.result ? `${f.result.a} ${f.result.b}` : "")).join("\n");
+
+async function copiarTexto(txt) {
+  try {
+    await navigator.clipboard.writeText(txt);
+  } catch {
+    const t = document.createElement("textarea");
+    t.value = txt;
+    document.body.appendChild(t);
+    t.select();
+    document.execCommand("copy");
+    t.remove();
+  }
 }
 
 function apostasAbertas() {
@@ -226,7 +300,7 @@ function auditoriaSecao() {
         ${s.jogos.map((j) => `<div class="leg"><span>${j.a} ${j.pa} x ${j.pb} ${j.b}</span><span class="muted">venceu ${j.vencedor}</span></div>`).join("")}`).join("")
     : `<p class="muted">Nenhuma semana lançada.</p>`;
   return `
-    <p class="muted">Confira os placares de cada semana. Esta tela só mostra, não altera nada.</p>
+    <p class="muted">Confira os placares de cada semana.</p>
     <b>Faltando na semana atual</b>
     ${faltando}
     <br><b>Apostas abertas de semanas anteriores</b>

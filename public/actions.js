@@ -5,12 +5,12 @@ function pickLeg(fixtureId, market, side, team) {
     slip = slip.filter((l) => !key(l));
     return;
   }
-  // Melhor/pior da rodada é sempre aposta simples
-  if (market === "mb" || market === "mp") {
+  // Melhor/pior da rodada e Futuras são sempre aposta simples
+  if (market === "mb" || market === "mp" || FUTURAS.includes(market)) {
     slip = [{ fixtureId: null, market, side, team }];
     return;
   }
-  slip = slip.filter((l) => l.fixtureId !== fixtureId && l.market !== "mb" && l.market !== "mp");
+  slip = slip.filter((l) => l.fixtureId !== fixtureId && l.market !== "mb" && l.market !== "mp" && !FUTURAS.includes(l.market));
   slip.push({ fixtureId, market, side, team });
 }
 
@@ -52,7 +52,7 @@ document.addEventListener("click", async (e) => {
       const total = totalOdd();
       const apostado = stake;
       const legs = slip.map(({ fixtureId, market, side, team }) =>
-        market === "mb" || market === "mp" ? { market, target: team } : { fixtureId, market, side, team });
+        market === "mb" || market === "mp" || FUTURAS.includes(market) ? { market, target: team } : { fixtureId, market, side, team });
       const semana = state.semana;
       state = slip.length === 1
         ? await post({ action: "bet", ...legs[0], stake })
@@ -140,6 +140,38 @@ document.addEventListener("click", async (e) => {
     } else if (el.dataset.barraProjecao) {
       state = await post({ action: "odds", password: adminPw, valores: { [el.dataset.barraProjecao]: null } }, false);
       render();
+    } else if (el.dataset.futSuspender) {
+      state = await post({ action: "futurasAdmin", password: adminPw, suspensos: { [el.dataset.futSuspender]: el.dataset.valor === "1" } }, false);
+      render();
+    } else if (el.hasAttribute("data-fut-salvar")) {
+      const manual = { fc: {}, fps: {}, fpn: {}, fl: {} };
+      document.querySelectorAll("input[data-fut]").forEach((i) => { manual[i.dataset.fut][i.dataset.futId] = i.value.trim(); });
+      state = await post({ action: "futurasAdmin", password: adminPw, manual }, false);
+      alert("Odds das Futuras salvas.");
+      render();
+    } else if (el.hasAttribute("data-fut-recalcular")) {
+      state = await post({ action: "futurasAdmin", password: adminPw, recalcular: true }, false);
+      alert("Futuras recalculadas.");
+      render();
+    } else if (el.hasAttribute("data-fut-campeao")) {
+      const id = $("#futCampeao").value;
+      if (!confirm(id ? "Definir o campeão e pagar as apostas de campeão?" : "Remover o campeão e reabrir as apostas de campeão?")) return;
+      state = await post({ action: "futurasAdmin", password: adminPw, campeao: id }, false);
+      render();
+    } else if (el.dataset.destaqueOk) {
+      try { localStorage.setItem(el.dataset.destaqueOk, "1"); } catch {}
+      render();
+    } else if (el.hasAttribute("data-copiar-confrontos")) {
+      await copiarTexto(textoConfrontos());
+      alert("Confrontos copiados.");
+    } else if (el.hasAttribute("data-copiar-placares")) {
+      await copiarTexto(textoPlacares());
+      alert("Placares copiados.");
+    } else if (el.dataset.duelAdminCancelar) {
+      const todos = el.dataset.duelAdminCancelar === "todos";
+      if (!confirm(todos ? "Cancelar todos os 1x1 em aberto e devolver os valores?" : "Cancelar este 1x1 e devolver os valores?")) return;
+      state = await post({ action: "duelAdminCancelar", password: adminPw, duelId: el.dataset.duelAdminCancelar }, false);
+      render();
     } else if (el.hasAttribute("data-fechar-rodada")) {
       if (state.frozen) return alert("Todos os jogos estão congelados. Libere os jogos para mexer só no melhor/Odireston.");
       state = await post({ action: "fecharRodada", password: adminPw }, false);
@@ -161,7 +193,7 @@ document.addEventListener("click", async (e) => {
       alert(`Agora é ${state.semana}. Bônus de 100 GC para ${r.bonus.length} jogador(es).${r.trocouConfrontos ? " Confrontos da fila carregados." : ""}`);
       render();
     } else if (el.hasAttribute("data-config-save")) {
-      const pct = ["margemVitoria", "margemHandicap", "margemTotal", "pOver", "margemRodada"];
+      const pct = ["margemVitoria", "margemHandicap", "margemTotal", "pOver", "margemRodada", "margemFuturas"];
       const config = {};
       document.querySelectorAll("input[data-cfg]").forEach((i) => {
         const k = i.dataset.cfg;

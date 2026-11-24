@@ -1,42 +1,26 @@
 // Novidades mostradas ao abrir o app. Para uma nova versão, troque a versão e as páginas.
 const NOVIDADES = {
-  versao: "2026-11-17-v13",
+  versao: "2026-11-24-v13.2",
   paginas: [
     {
-      titulo: "Versão 13",
+      titulo: "Aba Futuras",
       itens: [
-        "Semanas agora seguem a NFL: W11 2026, W12 2026...",
-        "Dá para entrar como convidado, só para ver.",
-        "Nova abertura do app.",
+        "Aposte em quem vai ao playoff, quem fica na lanterna e quem é o campeão.",
+        "A odd fica travada na hora da aposta e é recalculada toda semana.",
       ],
     },
     {
-      titulo: "Odireston da rodada",
+      titulo: "Coroa e Troféu Odireston",
       itens: [
-        "O antigo \"pior da rodada\" agora se chama Odireston da rodada.",
-        "Continua uma aposta em cada (melhor e Odireston) por semana.",
+        "Maior pontuação da semana leva a 👑. Menor pontuação leva o Troféu Odireston.",
+        "O símbolo fica ao lado do nome até a semana seguinte fechar.",
+        "O último da tabela ganha a 🔦.",
       ],
     },
     {
-      titulo: "Odds mais justas",
+      titulo: "Bilhete novo",
       itens: [
-        "Handicap sem limite: a linha é a diferença das projeções.",
-        "Pontos por equipe agora pagam 1,90 nos dois lados.",
-        "Desvios medidos nas últimas 5 semanas da liga.",
-      ],
-    },
-    {
-      titulo: "Bônus semanal",
-      itens: [
-        "Os 100 GC da semana vão só para quem apostou pelo menos 1 GC nela.",
-        "A semana vira quando o admin fecha a rodada.",
-      ],
-    },
-    {
-      titulo: "Tabela",
-      itens: [
-        "Medalhas de cada um ao lado do nome, com o ano.",
-        "Chance de bye (2 primeiros) e de terminar em último.",
+        "Visual de bilhete antigo, com o nome completo de cada seleção.",
       ],
     },
   ],
