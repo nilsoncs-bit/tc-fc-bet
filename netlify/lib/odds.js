@@ -11,6 +11,8 @@ export const CONFIG_PADRAO = {
   pOver: 0.5, // chance do "mais de" no total por time
   margemRodada: 0.125, // melhor e Odireston da rodada
   tetoRodada: 301,
+  margemFuturas: 0.1, // aba Futuras: campeão, playoff e lanterna
+  tetoFuturas: 501,
 };
 
 // Limites de cada campo da configuração (o que vier fora disso é cortado)
@@ -23,6 +25,8 @@ export const CONFIG_LIMITES = {
   pOver: [0.05, 0.95],
   margemRodada: [0, 1],
   tetoRodada: [2, 1000],
+  margemFuturas: [0, 1],
+  tetoFuturas: [2, 5000],
 };
 
 export const ODD_MIN = 1.05;
