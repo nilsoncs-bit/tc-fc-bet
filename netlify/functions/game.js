@@ -6,6 +6,8 @@ import {
   json, weekNum, currentWeek, nextWeekId, ensureWallets, weekIdx, weekFromIdx, nflDe, rotuloSemana, semanaInterna,
 } from "../lib/utils.js";
 import { parseSchedule } from "../lib/schedule.js";
+import { FUT, NOME_FUT, calcFuturas, oddFutura, temporadaRegularCompleta } from "../lib/futuras.js";
+import { TOTAL_SEASON_WEEKS } from "./data.js";
 import { authPlayer } from "../lib/auth.js";
 import { standingsView } from "../lib/standings.js";
 import {
@@ -32,6 +34,9 @@ async function loadState(store) {
   state.ajustes ??= [];
   state.fila ??= [];
   state.config ??= {};
+  state.futuras ??= {};
+  state.futuras.manual ??= { fc: {}, fps: {}, fpn: {}, fl: {} };
+  state.futuras.suspensos ??= {};
   state.results[state.week] ??= {};
   // Odds manuais da rodada: zeradas na virada
   if (!state.odds || state.odds.week !== state.week) state.odds = { week: state.week, valores: {} };
@@ -53,7 +58,109 @@ async function loadState(store) {
   for (const p of PLAYERS) state.registry[p.id] ??= { id: p.id, name: p.name, team: p.team };
   for (const p of state.schedule.players) state.registry[p.id] = { id: p.id, name: p.name, team: p.team };
   ensureWallets(state, state.schedule.players, state.week);
+  calcDestaques(state);
   return state;
+}
+
+// ---------- Futuras ----------
+// Probabilidades calculadas uma vez por semana (recalculadas no FECHAR SEMANA ou pelo botão do Admin)
+function futurasProbs(state) {
+  const c = state.futuras.calc;
+  if (c && c.week === state.week) return c.probs;
+  const cfg = configDe(state);
+  const rows = standingsView(state, cfg.sigmaTime);
+  const atual = nflDe(state, state.week);
+  const semanas = [];
+  if (atual <= TOTAL_SEASON_WEEKS) {
+    const res = state.results[state.week] ?? {};
+    const pend = state.schedule.fixtures.filter((f) => !res[f.id]).map((f) => [f.a, f.b]);
+    if (pend.length) semanas.push(pend);
+    for (let n = atual + 1; n <= TOTAL_SEASON_WEEKS; n++) {
+      const q = state.fila.find((x) => x.nfl === n);
+      semanas.push(q ? q.fixtures.map((f) => [f.a, f.b]) : null);
+    }
+  }
+  const probs = calcFuturas(rows, semanas, cfg.sigmaTime);
+  state.futuras.calc = { week: state.week, probs };
+  return probs;
+}
+
+// Mercado fechado: suspenso pelo admin, CONGELAR TODOS, ou já decidido
+function futuraFechada(state, m) {
+  if (state.futuras.suspensos[m]) return "Suspenso pelo admin";
+  if (state.frozen === state.week) return "Fechado: rodada congelada";
+  if (m === "fc") {
+    if (state.futuras.campeao) return "Campeão já definido";
+    if (nflDe(state, state.week) > TOTAL_SEASON_WEEKS + 1) return "Fechado: mata-mata em andamento";
+  } else if (temporadaRegularCompleta(standingsView(state, configDe(state).sigmaTime))) {
+    return "Temporada regular encerrada";
+  }
+  return null;
+}
+
+function futurasView(state) {
+  const cfg = configDe(state);
+  const probs = futurasProbs(state);
+  const mercados = {};
+  for (const m of FUT) {
+    const fechado = futuraFechada(state, m);
+    mercados[m] = {
+      nome: NOME_FUT[m],
+      fechado,
+      times: state.schedule.players
+        .map((p) => {
+          const pr = probs[p.id]?.[m] ?? 0;
+          const auto = oddFutura(pr, cfg.margemFuturas, cfg.tetoFuturas);
+          const man = state.futuras.manual[m][p.id];
+          return { id: p.id, p: pr, auto, manual: Number.isFinite(man), odd: Number.isFinite(man) ? man : auto };
+        })
+        .filter((t) => t.odd !== null || t.manual)
+        .sort((x, y) => x.odd - y.odd),
+    };
+  }
+  return { mercados, campeao: state.futuras.campeao ?? null, suspensos: state.futuras.suspensos };
+}
+
+// Playoff e lanterna: pagos quando todos completam a temporada regular. Campeão: quando o admin define.
+function settleFuturas(state) {
+  const rows = standingsView(state, configDe(state).sigmaTime);
+  const regular = temporadaRegularCompleta(rows);
+  const playoff = new Set(rows.slice(0, PLAYOFF_SPOTS).map((r) => r.id));
+  const lanterna = rows[rows.length - 1]?.id;
+  const campeao = state.futuras.campeao;
+  for (const id of Object.keys(state.wallets)) {
+    let w = state.wallets[id];
+    for (let i = 0; i < w.history.length; i++) {
+      const h = w.history[i];
+      if (h.type !== "bet" || h.status !== "open" || !FUT.includes(h.market)) continue;
+      if (h.market === "fc") {
+        if (campeao) w = settleBet(w, i, h.target === campeao);
+      } else if (regular) {
+        const ganhou = h.market === "fps" ? playoff.has(h.target) : h.market === "fpn" ? !playoff.has(h.target) : h.target === lanterna;
+        w = settleBet(w, i, ganhou);
+      }
+    }
+    state.wallets[id] = w;
+  }
+}
+
+// Coroa (maior pontuação) e Troféu Odireston (menor) da semana que fechou.
+// Só são definidos quando todos os jogos daquela semana têm placar; empate: todos levam.
+function calcDestaques(state) {
+  const d = state.destaques;
+  if (!d || d.melhor) return;
+  const res = Object.values(state.results[d.week] ?? {});
+  if (res.length < d.nJogos) return;
+  const pts = {};
+  for (const r of res) { pts[r.aId] = r.a; pts[r.bId] = r.b; }
+  const vals = Object.values(pts);
+  if (!vals.length) return;
+  const max = Math.max(...vals);
+  const min = Math.min(...vals);
+  d.melhor = Object.keys(pts).filter((id) => pts[id] === max);
+  d.pior = Object.keys(pts).filter((id) => pts[id] === min);
+  d.ptsMelhor = max;
+  d.ptsPior = min;
 }
 
 const emoteOf = (state, id) => state.emotes?.[id] ?? EMOTES[id] ?? "⚽";
@@ -154,6 +261,15 @@ function settleMulti(wallet, index, won) {
 }
 
 function buildLeg(state, item) {
+  if (FUT.includes(item.market)) {
+    const fechado = futuraFechada(state, item.market);
+    if (fechado) throw new Error(`Futuras · ${NOME_FUT[item.market]}: ${fechado}`);
+    const t = futurasView(state).mercados[item.market].times.find((x) => x.id === item.target);
+    if (!t || !t.odd) throw new Error("Seleção indisponível neste mercado");
+    const team = teamOf(state, item.target);
+    const pick = { fc: `${team} campeão`, fps: `${team} vai ao playoff`, fpn: `${team} fora do playoff`, fl: `${team} lanterna` }[item.market];
+    return { market: item.market, target: item.target, side: item.market, odd: t.odd, futura: true, match: `Futuras · ${NOME_FUT[item.market]}`, pick };
+  }
   if (RODADA.includes(item.market)) {
     if (rodadaBloqueada(state)) throw new Error(`${NOME_RODADA[item.market]} fechado pelo admin`);
     const alvo = state.schedule.players.find((p) => p.id === item.target);
@@ -232,6 +348,7 @@ function settleWeek(state, week) {
     for (let i = 0; i < w.history.length; i++) {
       const h = w.history[i];
       if (h.status !== "open" || h.week !== week) continue;
+      if (h.type === "bet" && FUT.includes(h.market)) continue; // Futuras: liquidadas em settleFuturas
       if (h.type === "bet" && RODADA.includes(h.market)) {
         const jogos = Object.values(res);
         if (jogos.length < (h.nJogos ?? 1)) continue;
@@ -429,7 +546,12 @@ function view(state) {
       };
     }),
     rodada: { bloqueada: rodadaBloqueada(state), times: rodadaOf(state) },
+    destaques: state.destaques?.melhor
+      ? { week: state.destaques.week, semana: rotuloSemana(state, state.destaques.week), melhor: state.destaques.melhor,
+          pior: state.destaques.pior, ptsMelhor: state.destaques.ptsMelhor, ptsPior: state.destaques.ptsPior }
+      : null,
     playoffSpots: PLAYOFF_SPOTS,
+    futuras: futurasView(state),
     standings: standingsView(state, configDe(state).sigmaTime).map((r) => ({ ...r, emote: emoteOf(state, r.id) })),
     duels: Object.values(state.duels).map((d) => ({
       ...d,
@@ -480,6 +602,8 @@ function auditoriaView(state) {
 
 const save = (store, state) => {
   settleDuels(state);
+  calcDestaques(state);
+  settleFuturas(state);
   return store.setJSON("state", state);
 };
 
@@ -675,6 +799,11 @@ export default async (req) => {
     if (body.semanaAtual && body.semanaAtual !== state.week) return json({ error: "A semana já foi avançada. Recarregue a página." }, 409);
     const velha = state.week;
     const nova = nextWeekId(velha);
+    // Destaques da semana que fecha (entregues quando todos os placares estiverem lançados)
+    state.destaques = { week: velha, nJogos: state.schedule.fixtures.length };
+    // Futuras: odds manuais zeradas e recalculadas na nova semana
+    state.futuras.manual = { fc: {}, fps: {}, fpn: {}, fl: {} };
+    delete state.futuras.calc;
     // Bônus só para quem apostou pelo menos 1 GC na semana que está fechando
     const apostou = (w) =>
       w.history.some(
@@ -710,6 +839,39 @@ export default async (req) => {
     state.pending = null;
     await save(store, state);
     return json({ ...view(state), bonus, trocouConfrontos: !!daVez });
+  }
+
+  // Futuras: odds manuais, suspender mercado, recalcular e definir campeão
+  if (body.action === "futurasAdmin") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    const cfg = configDe(state);
+    for (const m of FUT) {
+      for (const [pid, v] of Object.entries(body.manual?.[m] ?? {})) {
+        if (!state.schedule.players.some((p) => p.id === pid)) continue;
+        if (v === null || v === "") { delete state.futuras.manual[m][pid]; continue; }
+        const x = Number(String(v).replace(",", "."));
+        if (Number.isFinite(x)) state.futuras.manual[m][pid] = Math.min(cfg.tetoFuturas, Math.max(1.01, +x.toFixed(2)));
+      }
+      if (body.suspensos && m in body.suspensos) state.futuras.suspensos[m] = !!body.suspensos[m];
+    }
+    if (body.recalcular) delete state.futuras.calc;
+    if ("campeao" in (body ?? {})) {
+      if (body.campeao && !state.registry[body.campeao]) return json({ error: "Time inválido" }, 400);
+      if (!body.campeao && state.futuras.campeao) {
+        // desfaz: reabre as apostas de campeão já pagas
+        for (const w of Object.values(state.wallets)) {
+          w.history = w.history.map((h) => {
+            if (h.type !== "bet" || h.market !== "fc" || (h.status !== "won" && h.status !== "lost")) return h;
+            if (h.status === "won") w.balance -= h.payout ?? 0;
+            const { payout, ...rest } = h;
+            return { ...rest, status: "open" };
+          });
+        }
+      }
+      state.futuras.campeao = body.campeao || null;
+    }
+    await save(store, state);
+    return json(view(state));
   }
 
   if (body.action === "filaRemover") {
@@ -800,6 +962,30 @@ export default async (req) => {
       state.results[week][f.id] = { a: s.a, b: s.b, winner: s.a >= s.b ? "A" : "B", aId: f.a, bId: f.b };
     }
     settleWeek(state, week);
+    await save(store, state);
+    return json(view(state));
+  }
+
+  // Admin: cancela 1x1 pendente ou ativo e devolve tudo (desafiante, desafiado, espectadores e mediador)
+  if (body.action === "duelAdminCancelar") {
+    if (!isAdmin) return json({ error: "Senha de admin inválida" }, 403);
+    const alvo = body.duelId === "todos"
+      ? Object.values(state.duels).filter((d) => d.status === "pendente" || d.status === "ativo")
+      : [state.duels[body.duelId]].filter((d) => d && (d.status === "pendente" || d.status === "ativo"));
+    if (!alvo.length) return json({ error: "Nenhum 1x1 em aberto para cancelar" }, 400);
+    for (const d of alvo) {
+      if (d.status === "pendente") {
+        cancelDuel(state, d, "cancelado");
+        continue;
+      }
+      mov(state, d.desafiante, d.valor, "1x1 cancelado pelo admin: valor devolvido", d.week);
+      mov(state, d.desafiado, d.valor, "1x1 cancelado pelo admin: valor devolvido", d.week);
+      for (const b of d.apostas) {
+        mov(state, b.user, b.valor, "1x1 cancelado pelo admin: aposta devolvida", d.week);
+        if (b.modo === "barra") mov(state, d.mediador, b.med, "1x1 cancelado pelo admin: mediação devolvida", d.week);
+      }
+      d.status = "cancelado";
+    }
     await save(store, state);
     return json(view(state));
   }
@@ -940,7 +1126,7 @@ export default async (req) => {
         );
         if (ja) return json({ error: `Você já apostou no ${leg.match} desta semana` }, 400);
       }
-      const dup = !RODADA.includes(leg.market) && w.history.some(
+      const dup = !RODADA.includes(leg.market) && !FUT.includes(leg.market) && w.history.some(
         (h) =>
           h.type === "bet" &&
           h.status === "open" &&
@@ -968,6 +1154,7 @@ export default async (req) => {
       if (items.length < 2) throw new Error("A múltipla precisa de pelo menos 2 seleções");
       const ids = items.map((i) => i.fixtureId);
       if (items.some((i) => RODADA.includes(i.market))) throw new Error("Melhor e Odireston da rodada só valem em aposta simples");
+      if (items.some((i) => FUT.includes(i.market))) throw new Error("Futuras só valem em aposta simples");
       if (new Set(ids).size !== ids.length) throw new Error("Só é permitida uma seleção por confronto na múltipla");
       const legs = items.map((i) => buildLeg(state, i));
       const odd = +legs.reduce((acc, l) => acc * l.odd, 1).toFixed(2);
